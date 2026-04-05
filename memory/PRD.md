@@ -105,6 +105,78 @@ Building ZephyrWealth.ai — a professional back-office platform for a licensed 
 - 10 route files, 5 shared modules (database.py, models.py, utils.py, pdf_utils.py, seed.py)
 - 38/38 regression tests pass, zero breaking changes
 
+### Deployment Fixes (Complete — 2026-04-05)
+- **`requirements.txt` cleaned**: removed embedded pip output (lines 9–12), added
+  `--extra-index-url https://d33sy5i8bnduwe.cloudfront.net/simple/` for `emergentintegrations`,
+  added `python-multipart` (required for FastAPI `UploadFile` / form handling)
+- **`/health` route added**: FastAPI now responds to both `GET /health` (Kubernetes pod probe,
+  no `/api` prefix) and `GET /api/health` (application-level check)
+- **Dual-domain CORS fix** (see critical section below)
+
+---
+
+## ⚠️ CRITICAL — Dual-Domain CORS Configuration
+
+> **Any future change to `server.py` CORS configuration MUST preserve this logic.**
+
+### Problem
+The Emergent deployment system sets `FRONTEND_URL` once and skips it on subsequent deploys
+(`"secret FRONTEND_URL already exists, skipping"`). This means `FRONTEND_URL` in the
+production pod can permanently hold the **preview** URL
+(`https://<app>.preview.emergentagent.com`) even after the app is live at the **production**
+domain (`https://<app>.emergent.host`).
+
+When the browser sends `Origin: https://<app>.emergent.host` and CORS only allows the preview
+URL, the `Access-Control-Allow-Origin` header is absent → the browser blocks every API
+response → **login silently fails**.
+
+### Fix — `backend/server.py` lines 24–44
+```python
+FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:3000")
+
+# Always whitelist both preview ↔ production counterpart domains.
+# The deployment system may freeze FRONTEND_URL at the preview URL even after
+# production go-live, so both must be explicitly allowed.
+_allowed_origins = [FRONTEND_URL]
+if ".preview.emergentagent.com" in FRONTEND_URL:
+    _allowed_origins.append(
+        FRONTEND_URL.replace(".preview.emergentagent.com", ".emergent.host")
+    )
+elif ".emergent.host" in FRONTEND_URL:
+    _allowed_origins.append(
+        FRONTEND_URL.replace(".emergent.host", ".preview.emergentagent.com")
+    )
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_allowed_origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+```
+
+### Rules
+1. **Never replace `_allowed_origins` with a single-item list** — login will break on production.
+2. **Never hardcode** `https://compliance-hub-demo.emergent.host` or the preview URL — the
+   derivation logic handles all app names automatically.
+3. **Never use `allow_origins=["*"]`** — incompatible with `allow_credentials=True` and
+   insecure for a compliance platform.
+4. If `FRONTEND_URL` is updated in `.env` (e.g., to a custom domain), the derivation block
+   will fall through cleanly and only that one origin will be allowed — this is correct
+   behaviour for custom domains.
+
+### Verification
+After any CORS-touching change, run this check against the live production domain:
+```bash
+curl -s -D - -X POST "https://<app>.emergent.host/api/auth/login" \
+  -H "Content-Type: application/json" \
+  -H "Origin: https://<app>.emergent.host" \
+  -d '{"email":"compliance@zephyrwealth.ai","password":"Comply1234!"}' \
+  | grep -i "access-control-allow-origin"
+# Expected: access-control-allow-origin: https://<app>.emergent.host
+```
+
 ## Prioritized Backlog
 
 ### P1 — Upcoming
