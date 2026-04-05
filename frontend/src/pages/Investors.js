@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Users, Search, Filter } from 'lucide-react';
+import { Users, Search, Filter, Plus } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import RiskBadge from '../components/RiskBadge';
 
 const API = process.env.REACT_APP_BACKEND_URL;
@@ -21,6 +22,7 @@ function formatCurrency(v) {
 }
 
 export default function Investors() {
+  const navigate = useNavigate();
   const [investors, setInvestors] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -56,9 +58,18 @@ export default function Investors() {
             Investors
           </h1>
         </div>
-        <div className="flex items-center gap-2 text-sm font-mono text-[#6B7280]">
-          <span className="text-2xl font-bold text-[#1B3A6B]">{investors.length}</span>
-          <span>total</span>
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 text-sm font-mono text-[#6B7280]">
+            <span className="text-2xl font-bold text-[#1B3A6B]">{investors.length}</span>
+            <span>total</span>
+          </div>
+          <button
+            onClick={() => navigate('/investors/new')}
+            data-testid="new-investor-btn"
+            className="flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-[#1B3A6B] text-white rounded-sm hover:bg-[#122A50] transition-colors"
+          >
+            <Plus size={15} /> New Investor
+          </button>
         </div>
       </div>
 
@@ -131,7 +142,8 @@ export default function Investors() {
                 filtered.map((inv) => (
                   <tr
                     key={inv.id}
-                    className="border-b border-[#E5E7EB] hover:bg-[#F3F4F6] transition-colors"
+                    onClick={() => navigate(`/investors/${inv.id}`)}
+                    className="border-b border-[#E5E7EB] hover:bg-[#F3F4F6] transition-colors cursor-pointer"
                     data-testid={`investor-row-${inv.id}`}
                   >
                     <td className="px-4 py-3 font-medium text-[#1F2937]">{inv.name}</td>
@@ -158,16 +170,12 @@ export default function Investors() {
                     </td>
                     <td className="px-4 py-3">
                       <button
-                        disabled={!inv.scorecard_completed}
+                        onClick={(e) => { e.stopPropagation(); navigate(`/investors/${inv.id}`); }}
                         data-testid={`investor-action-${inv.id}`}
-                        className={`text-xs px-3 py-1.5 rounded-sm font-semibold transition-colors ${
-                          inv.scorecard_completed
-                            ? 'bg-[#1B3A6B] text-white hover:bg-[#122A50]'
-                            : 'bg-[#E5E7EB] text-[#9CA3AF] cursor-not-allowed opacity-60 border border-[#D1D5DB]'
-                        }`}
-                        title={!inv.scorecard_completed ? 'Complete Review Scorecard first' : 'Review investor'}
+                        className="text-xs px-3 py-1.5 rounded-sm font-semibold transition-colors bg-[#1B3A6B] text-white hover:bg-[#122A50]"
+                        title="View investor detail"
                       >
-                        Review
+                        View
                       </button>
                     </td>
                   </tr>

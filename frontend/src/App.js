@@ -5,6 +5,8 @@ import Layout from './components/Layout';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import Investors from './pages/Investors';
+import InvestorOnboarding from './pages/InvestorOnboarding';
+import InvestorDetail from './pages/InvestorDetail';
 import Deals from './pages/Deals';
 import Portfolio from './pages/Portfolio';
 import Reports from './pages/Reports';
@@ -64,6 +66,8 @@ function AppRoutes() {
         <Route index element={<Navigate to="/dashboard" replace />} />
         <Route path="dashboard" element={<Dashboard />} />
         <Route path="investors" element={<Investors />} />
+        <Route path="investors/new" element={<InvestorOnboarding />} />
+        <Route path="investors/:id" element={<InvestorDetail />} />
         <Route path="deals" element={<Deals />} />
         <Route path="portfolio" element={<Portfolio />} />
         <Route path="reports" element={<Reports />} />
