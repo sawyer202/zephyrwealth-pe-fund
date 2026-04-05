@@ -1,0 +1,126 @@
+{
+  "theme_and_archetype": {
+    "theme": "Light Main / Dark Sidebar",
+    "archetype": "Archetype 4 (Swiss & High-Contrast) / Old Money Tech",
+    "reasoning": "This is a professional back-office platform for a licensed Bahamian Private Equity fund. It requires the authority and functional density of a Bloomberg terminal (Archetype 4) while maintaining the premium, trustworthy aesthetic of high finance. Deep charcoal, crisp white, navy, and gold ensure a premium institutional feel."
+  },
+  "colors": {
+    "background": "#FAFAF8",
+    "surface": "#F8F9FA",
+    "sidebar": "#252523",
+    "primary": "#1B3A6B",
+    "accent": "#C9A84C",
+    "success": "#10B981",
+    "warning": "#F59E0B",
+    "danger": "#EF4444",
+    "text_primary": "#1F2937",
+    "text_secondary": "#6B7280",
+    "border": "#E5E7EB",
+    "logo_text_zephyr": "#FFFFFF",
+    "logo_text_wealth": "#00A8C6"
+  },
+  "typography": {
+    "heading_font": "Chivo",
+    "body_font": "Inter",
+    "data_font": "JetBrains Mono",
+    "rules": {
+      "h1": "text-3xl sm:text-4xl font-bold tracking-tight text-[#1F2937] font-sans",
+      "h2": "text-2xl sm:text-3xl font-bold tracking-tight text-[#1F2937] font-sans",
+      "h3": "text-xl sm:text-2xl font-semibold tracking-tight text-[#1F2937] font-sans",
+      "body": "text-base min-h-[16px] leading-relaxed text-[#1F2937] font-normal",
+      "data_numbers": "font-mono text-sm tracking-tight",
+      "overlines": "text-xs font-bold uppercase tracking-[0.2em] text-[#6B7280]"
+    }
+  },
+  "layout_and_spacing": {
+    "strategy": "The 'Control Room' Grid",
+    "container": "w-full min-h-screen flex font-sans bg-[#FAFAF8]",
+    "sidebar": "w-64 flex-shrink-0 bg-[#252523] text-white flex flex-col h-screen sticky top-0 border-r border-[#333333]",
+    "main_content": "flex-1 bg-[#FAFAF8] min-h-screen flex flex-col",
+    "dashboard_grid": "grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4 md:gap-6",
+    "padding_rules": "p-6 md:p-8 for main page sections to ensure breathing room.",
+    "border_radius": "rounded-sm (max 4px to 8px) for a sharp, institutional look. Avoid heavily rounded corners to keep it professional."
+  },
+  "components": {
+    "cards": {
+      "style": "Flat, rectangular. bg-[#FFFFFF] border border-[#E5E7EB] rounded-sm shadow-sm",
+      "header": "border-b border-[#E5E7EB] px-5 py-4 flex justify-between items-center",
+      "content": "px-5 py-5"
+    },
+    "buttons": {
+      "primary": "bg-[#1B3A6B] text-white rounded-sm px-4 py-2 text-sm font-semibold hover:bg-[#122A50] transition-colors focus:ring-2 focus:ring-[#1B3A6B]/50",
+      "accent": "bg-[#C9A84C] text-white rounded-sm px-4 py-2 text-sm font-semibold hover:bg-[#A88C3F] transition-colors",
+      "disabled": "bg-[#E5E7EB] text-[#9CA3AF] cursor-not-allowed opacity-50 border border-[#D1D5DB]"
+    },
+    "tables": {
+      "style": "w-full text-sm text-left border-collapse",
+      "header": "text-xs uppercase bg-[#F8F9FA] text-[#6B7280] font-semibold border-b border-[#E5E7EB] tracking-wider",
+      "row": "border-b border-[#E5E7EB] hover:bg-[#F3F4F6] transition-colors",
+      "cell": "px-4 py-3 align-middle"
+    },
+    "badges": {
+      "low_risk": "bg-[#10B981]/10 text-[#10B981] border border-[#10B981]/20 px-2.5 py-0.5 rounded-sm text-xs font-mono uppercase tracking-wide inline-flex items-center justify-center",
+      "medium_risk": "bg-[#F59E0B]/10 text-[#F59E0B] border border-[#F59E0B]/20 px-2.5 py-0.5 rounded-sm text-xs font-mono uppercase tracking-wide inline-flex items-center justify-center",
+      "high_risk": "bg-[#EF4444]/10 text-[#EF4444] border border-[#EF4444]/20 px-2.5 py-0.5 rounded-sm text-xs font-mono uppercase tracking-wide inline-flex items-center justify-center"
+    },
+    "forms": {
+      "input": "bg-[#FFFFFF] border border-[#D1D5DB] rounded-sm px-3 py-2 text-sm text-[#1F2937] focus:outline-none focus:ring-1 focus:ring-[#1B3A6B] focus:border-[#1B3A6B] placeholder:text-[#9CA3AF]",
+      "label": "block text-sm font-medium text-[#374151] mb-1.5"
+    }
+  },
+  "motion_and_interactions": {
+    "hover_states": "All interactive rows, buttons, and links must have a clear hover state.",
+    "transitions": "Use transition-colors duration-200 ease-in-out.",
+    "disabled_actions": "All action buttons MUST be disabled (opacity-50 cursor-not-allowed) until the 'Review Scorecard' step is completed in the Compliance UI."
+  },
+  "media_and_assets": {
+    "icons": "lucide-react for standard icons, stroke-width 1.5.",
+    "images": [
+      {
+        "category": "login_background",
+        "url": "https://images.unsplash.com/photo-1720044332118-3c4741abb0de?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NTYxODh8MHwxfHNlYXJjaHwxfHxiYWhhbWFzJTIwYWVyaWFsJTIwb2NlYW58ZW58MHx8fHwxNzc1MzU1OTYwfDA&ixlib=rb-4.1.0&q=85",
+        "description": "Aerial view of Bahamas ocean. Must be heavily overlaid (bg-black/70) to ensure high-end premium aesthetic and text readability on the login screen."
+      },
+      {
+        "category": "investor_avatar_1",
+        "url": "https://images.unsplash.com/photo-1762522926157-bcc04bf0b10a?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1NzR8MHwxfHNlYXJjaHwzfHxwcm9mZXNzaW9uYWwlMjBoZWFkc2hvdCUyMGNvcnBvcmF0ZXxlbnwwfHx8fDE3NzUzNTU5NjB8MA&ixlib=rb-4.1.0&q=85",
+        "description": "Professional corporate headshot for sample investor profile in the queue."
+      },
+      {
+        "category": "investor_avatar_2",
+        "url": "https://images.pexels.com/photos/36363694/pexels-photo-36363694.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+        "description": "Professional corporate headshot for sample investor profile in the queue."
+      },
+      {
+        "category": "investor_avatar_3",
+        "url": "https://images.unsplash.com/photo-1769636929261-e913ed023c83?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1NzR8MHwxfHNlYXJjaHw0fHxwcm9mZXNzaW9uYWwlMjBoZWFkc2hvdCUyMGNvcnBvcmF0ZXxlbnwwfHx8fDE3NzUzNTU5NjB8MA&ixlib=rb-4.1.0&q=85",
+        "description": "Professional corporate headshot for sample investor profile in the queue."
+      }
+    ]
+  },
+  "pages_and_flows": {
+    "login_page": {
+      "layout": "Centered floating card over the Bahamas aerial background with a dark overlay (bg-[#252523]/80). The card itself should be pure white (#FFFFFF).",
+      "content": "Email, Password, Role Selector (Compliance/Risk/Fund Manager) as a dropdown, Login button."
+    },
+    "executive_dashboard": {
+      "layout": "Grid of KPI cards at the top (gap-4 or gap-6), followed by a 2-column bento layout or stacked full-width tables for Investor Queue and Deal Pipeline.",
+      "kpi_cards": "Total Investors, Pending KYC Reviews, Deals in Pipeline, Flagged Items. Use monospaced font for the main digits."
+    },
+    "investor_queue": {
+      "layout": "Full page dense data table.",
+      "features": "Risk Rating badges (Low/Medium/High). Columns for Name, Type, KYC Status, Risk, Actions."
+    },
+    "compliance_scoring": {
+      "layout": "Detailed view/modal for a specific investor.",
+      "features": "Scorecard interface with a checklist. Main action button ('Approve KYC') is explicitly disabled until all scorecard items are marked reviewed."
+    }
+  },
+  "technical_instructions_for_main_agent": {
+    "frameworks": "React, Tailwind CSS, Shadcn/UI primitives. Fast-loading static dashboard.",
+    "testing": "All interactive elements MUST include `data-testid` attributes (e.g., `data-testid=\"login-submit-button\"`, `data-testid=\"sidebar-nav-deals\"`, `data-testid=\"approve-kyc-button\"`).",
+    "accessibility": "Ensure contrast ratios. Focus states must use `focus:ring-[#1B3A6B]`.",
+    "fonts_installation": "Add Google Fonts for 'Chivo' (headings) and 'JetBrains Mono' (data numbers). Map them in tailwind.config.js under `fontFamily: { sans: ['Inter', 'sans-serif'], heading: ['Chivo', 'sans-serif'], mono: ['JetBrains Mono', 'monospace'] }`.",
+    "component_libraries": "Install relevant shadcn/ui components: card, button, input, badge, table, select/dropdown-menu. Ensure the UI feels like a dense Bloomberg terminal, not a fluffy consumer app."
+  }
+}
