@@ -22,9 +22,23 @@ from routes.admin import router as admin_router
 app = FastAPI(title="ZephyrWealth API", version="3.0.0")
 
 FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:3000")
+
+# Always allow both the configured origin and its emergent.host production equivalent.
+# The deployment system may preserve the preview URL in FRONTEND_URL even after
+# deploying to the .emergent.host production domain, so both must be whitelisted.
+_allowed_origins = [FRONTEND_URL]
+if ".preview.emergentagent.com" in FRONTEND_URL:
+    _allowed_origins.append(
+        FRONTEND_URL.replace(".preview.emergentagent.com", ".emergent.host")
+    )
+elif ".emergent.host" in FRONTEND_URL:
+    _allowed_origins.append(
+        FRONTEND_URL.replace(".emergent.host", ".preview.emergentagent.com")
+    )
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[FRONTEND_URL],
+    allow_origins=_allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
