@@ -1,120 +1,148 @@
 <analysis>**original_problem_statement**: 
 Building ZephyrWealth.ai — a professional back-office platform for a licensed Bahamian Private Equity fund. Target users are Compliance Officers, Risk Officers, and Fund Managers.
-PRODUCT REQUIREMENTS (PHASE 1):
-- Step 0: Security Setup (, ).
-- Feature 1: Authentication + Role System (compliance, risk, manager) with seeded accounts, JWT session management, bcrypt, rate limiting.
-- Feature 2: Executive Dashboard Shell with Sidebar navigation, KPI overview cards, Investor Queue, Deal Queue with risk rating badges and status-dependent action buttons.
+PRODUCT REQUIREMENTS:
+- Phase 1 (Completed): Security Setup, Authentication + Role System, Executive Dashboard Shell.
+- Phase 2 (Completed): Investor Onboarding (KYC) flow, AI Compliance Scorecard utilizing Claude API via Emergent Universal Key, and local document file storage.
+- Phase 3 (Current): Bug fixes, Deal Pipeline Kanban (), Dashboard Charts (Recharts), and Role-Based UI visibility toggling.
 
-**User's preferred language**: English (Next agent MUST respond in English)
+**User's preferred language**: English (INSTRUCT next agent to respond in English only)
 
 **what currently exists?**: 
-Phase 1 foundation is fully built and operational. The platform features a React + Tailwind frontend paired with a FastAPI + Local MongoDB backend. JWT-based authentication with role-based routing is live. The Executive Dashboard displays correctly with seeded KPI data, Investor/Deal queues, and proper UI color schemes matching Old Money Tech (Bloomberg Terminal meets SaaS) design guidelines.
+Phase 1 and Phase 2 are fully built, integrated, and successfully tested. The platform has a React + Tailwind frontend with a FastAPI + Local MongoDB backend. Features currently live include: JWT role-based Auth, Executive Dashboard, 4-Step Investor Onboarding Form with local file upload, and an AI Compliance Scorecard generator powered by Claude Sonnet via the Emergent Universal Key. The UI strictly follows the Old Money Tech theme.
 
 **Last working item**:
-    - Last item agent was working: Implementation and End-to-End testing of the Phase 1 MVP (Auth and Dashboard Shell). Testing Subagent was utilized to verify API logic and UI rendering.
-    - Status: USER VERIFICATION PENDING
-    - Agent Testing Done: Y
-    - Which testing method agent to use?: NA (testing is already completed and passed)
+    - Last item agent was working: The agent was exploring the codebase (, , , and ) to gather context on Phase 3 and the P0  bug. The agent has proposed a plan to the user using the  tool and is currently waiting for approval.
+    - Status: BLOCKED (Waiting for user response to )
+    - Agent Testing Done: N
+    - Which testing method agent to use?: Both (Use manual testing/screenshots for the initial P0 bug fix, and  for full Phase 3 features once completed).
     - User Testing Done: N
 
 **All Pending/In progress Issue list**:
-No active issues.
+  Issue 1: Fix  crash on Investors page (P0)
+  
+  Issues Detail:
+  - Issue 1: 
+     - Attempted fixes: Investigated  and frontend files but no code changes applied in this specific session yet.
+     - Next debug checklist: 
+        1. In  — guard the state: 
+        2. In  — confirm  returns a plain JSON array, not a wrapped object.
+     - Why fix this issue and what will be achieved with the fix?: The Investors queue page is currently crashing because the API returns an object instead of an array. User requested this to be fixed BEFORE any Phase 3 feature work.
+     - Status: NOT STARTED (Pending user plan approval)
+     - Is recurring issue?: N
+     - Should Test frontend/backend/both after fix?: Both
+     - Blocked on other issue: None
 
 **In progress Task List**:
-No tasks are currently in progress. Phase 1 is fully delivered.
+  Task 1: Feature 5 — Deal Pipeline Kanban (P1)
+
+  Task Detail:
+  - Task 1: 
+     - Where to resume: Implement the Deal Pipeline Kanban board () with 4 columns, Add New Deal modal, Mandate Filter logic against  collection, and the  page with Deal Health Score and Execute Transaction button.
+     - What will be achieved with this?: Fund managers will be able to track deals through different pipeline stages and run automated mandate checks.
+     - Status: NOT STARTED (Context gathered, waiting for plan approval)
+     - Should Test frontend/backend/both after fix?: Both
+     - Blocked on something: Waiting for user response to , and P0 bug fix.
 
 **Upcoming and Future Tasks**:
-Upcoming Tasks:
-- Task 1: Integration of Anthropic Claude API for AI-assisted compliance scoring using the Emergent Universal Key (P0).
-- Task 2: Build detailed Investor Onboarding (KYC) flow (P1).
-- Task 3: Build detailed Deal Pipeline management views (P1).
-Future Tasks:
-- PDF report generation utilizing local file storage (P2).
+    Upcoming Tasks:
+    - Feature 6: Dashboard Charts (P1) - Add two Recharts charts to  below KPI cards (Investor funnel bar chart & Deal pipeline bar chart).
+    - Feature 7: Role-Based UI (P1) - Hide/show UI elements based on  (compliance, risk, manager).
+    
+    Future Tasks:
+    - PDF report generation utilizing local file storage (P2).
 
-**Completed work in this session**:
-- Created  and  security files (DONE)
-- Set up React + FastAPI + MongoDB boilerplate and environment (DONE)
-- JWT Authentication & Role-based middleware (DONE)
-- Sidebar, Layout, and routing structure (DONE)
-- Dashboard KPI cards and Queue Tables components (DONE)
-- Login Page with required styling and demo user actions (DONE)
-- 13/13 Backend API Tests & E2E Frontend Flows passed (DONE)
+**Completed work in this session**
+- Read project structure, , , and  to build context (DONE).
+- Checked  to verify Recharts installation (DONE).
+- Proposed execution plan to user via  (DONE).
+- Recently completed:
+  - Phase 1 & Phase 2 implementations completed in previous forks.
 
-**Earlier issues found/mentioned but not fixed**:
+**Earlier issues found/mentioned but not fixed**
 None.
 
-**Known issue recurrence from previous fork**:
-None (This is the first fork).
+**Known issue recurrence from previous fork**
+None.
 
-**Code Architecture**:
+**Code Architecture**
 
 
-**Key Technical Concepts**:
-Frontend: React, Tailwind CSS, Shadcn UI
-Backend: FastAPI, Python
+**Key Technical Concepts**
+Frontend: React, Tailwind CSS, Shadcn UI, Recharts
+Backend: FastAPI, Python, local filesystem for documents
 Database: MongoDB (Local environment)
 Architecture: REST API with JWT-based Authentication
+AI Integration: Emergent Universal Key (Claude Sonnet) directly in FastAPI
 
-**key DB schema**:
-  - : {{_id, email, password_hash, role, created_at}}
-  - : {{_id, user_id, action, target_id, target_type, timestamp, notes}}
-  -  (Seeded demo collection): {{_id, name, type, submitted_date, risk_rating, status}}
-  -  (Seeded demo collection): {{_id, name, type, submitted_date, risk_rating, status}}
+**key DB schema**
+  - : {_id, email, password_hash, role, created_at}
+  - : {_id, entity_type, legal_name, status, etc.}
+  - : {_id, entity_id, document_type, file_path, file_name, file_size}
+  - : {_id, entity_id, entity_type, scorecard_data, recommendation}
+  -  (Phase 3 target): {_id, company_name, sector, geography, expected_irr, entry_valuation, entity_type, pipeline_stage, status}
+  -  (Phase 3 target): {_id, fund_name, allowed_sectors[], allowed_geographies[], irr_min, irr_max}
 
-**changes in tech stack**:
-- **CRITICAL SHIFT**: User explicitly chose **React + FastAPI + Local MongoDB** over the original prompt's Next.js + NextAuth setup during the  tool phase to align with the current operational environment. 
+**changes in tech stack**
+- None. The stack remains React + FastAPI + Local MongoDB. **CRITICAL:** Do NOT migrate to Next.js.
 
-**All files of reference**:
--  & : Initial security checkpoints.
-- : Contains FastAPI routes, MongoDB connection, and JWT logic.
-- : Application routing and React structure.
-- : Main Executive view with nested components.
-- : Houses seeded demo account passwords for testing.
-- : Master document for requirements and progression.
+**All files of reference** 
+- : Contains FastAPI routes. Needs checking for  endpoint formatting.
+- : Needs state guard fix for P0 bug.
+- : Needs implementation.
+- : Needs full Kanban UI implementation.
+- : Master document for progress and requirements.
+- : Houses test credentials.
 
 **Areas that need refactoring**:
-None. Code is fresh and modular.
+-  needs to be fully implemented.
 
-**key api endpoints**:
-- 
-- 
-- 
-- 
-- 
+**key api endpoints**
+-  (Needs fixing for array vs object return)
+-  
+-  
+-  
 
-**Critical Info for New Agent**:
-- **Tech Stack lock**: Stick to React and FastAPI. Do not attempt to migrate the app to Next.js.
-- **Design lock**: Continue adhering to the Old Money Tech theme generated by the Design Subagent (). Sidebar background must be , main background , and Wealth text accent .
-- **Auth lock**: Authentication is custom JWT implemented directly in FastAPI. Ensure  is updated if passwords change.
+**Critical Info for New Agent**
+- **BUG FIX FIRST:** Ensure the  bug is patched in both  and  BEFORE doing further UI work for Phase 3.
+- **Design lock:** Strict adherence required: sidebar , main background , and Wealth accent .
+- **Pending Input:** You MUST check the user's response to the last  call before executing code changes.
 
-**documents and test reports created in this job**:
-- 
-- 
-- 
-- 
-- 
+**documents and test reports created in this job**
+  - 
+  - 
+  - 
 
-**Last 10 User Messages and any pending HUMAN messages**:
-- *User Message 2*: Provided preferences for React + FastAPI stack, Local Mongo, universal LLM key, and exact design UI overrides. Instructed agent to begin with Step 0 security files and confirm the app runs. *(Completed)*
-- *User Message 1*: Start the task now *(Completed)*
+**Last 10 User Messages and any pending HUMAN messages** 
+- *Message 1 (System)*: Fork handoff summary.
+- *Message 2 (User)*: Provided explicit instructions to start Phase 3, explicitly listing a P0 bug fix (), Feature 5 (Deal Pipeline Kanban), Feature 6 (Dashboard Charts), and Feature 7 (Role-Based UI).
+- *Message 4, 6, 8, 10 (Tool Results)*: Agent investigating files.
+- *Message 12 (Tool Result)*: **PENDING HUMAN MESSAGE** - Question has been sent to the user via . Waiting for response regarding the execution plan.
 
-**Project Health Check**:
-- Backend: Healthy
-- Frontend: Healthy
-- Testing: Passed
+**Project Health Check:**
+- Backend: Healthy (Modifications for Phase 3 pending)
+- Frontend: Broken ( array mapping issue on Investors page needs immediate patch)
+- Testing: Phase 2 Passed. Phase 3 Testing Pending.
 
-**3rd Party Integrations**:
-- Anthropic Claude API (AI Scoring) — uses Emergent LLM Key (Yet to be implemented in Phase 2).
+**3rd Party Integrations**
+- Anthropic Claude API (Claude Sonnet for Compliance Scorecard) — uses Emergent LLM Key.
 
-**Testing status**:
-- Testing agent used after significant changes: YES
-- Troubleshoot agent used after agent stuck in loop: NO
-- Test files created: 
-- Known regressions: None
+**Testing status**
+  - Testing agent used after significant changes: NO (Pending for Phase 3)
+  - Troubleshoot agent used after agent stuck in loop: NO
+  - Test files created: None in this session.
+  - Known regressions: [ array wrapping issue]
 
-**Credentials to test flow**:
-Review  for specific role logins.
-Standard seed passwords format:  (e.g., ).
+**Credentials to test flow:**
+Review . Standard seed format is  (e.g., , ).
 
-**What agent forgot to execute**:
-Nothing. All items requested for Phase 1 execution were successfully delivered, tested, and pushed.</analysis>
+**What agent forgot to execute**
+The agent did not execute any code changes yet as it correctly stopped to gather context and ask the user for approval via . Next agent must wait for/read the user's reply, then immediately execute the P0 bug fix before proceeding to Phase 3 features.
+
+**Debugging checklist for current issue**
+    Issue:  on Investors page
+
+    Frontend files to check: 
+    -  (Add state guard )
+  
+    Backend files to check:
+    -  (Verify  endpoint directly returns a list , not a dict )</analysis>

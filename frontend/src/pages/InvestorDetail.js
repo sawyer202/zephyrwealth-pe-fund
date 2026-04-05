@@ -6,6 +6,7 @@ import {
   Phone, Mail, MapPin, DollarSign, Briefcase, Clock,
 } from 'lucide-react';
 import RiskBadge from '../components/RiskBadge';
+import { useAuth } from '../context/AuthContext';
 
 const API = process.env.REACT_APP_BACKEND_URL;
 
@@ -96,6 +97,8 @@ function IndicatorRow({ label, value }) {
 export default function InvestorDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const canDecide = user?.role === 'compliance';
   const [investor, setInvestor] = useState(null);
   const [documents, setDocuments] = useState([]);
   const [scorecard, setScorecard] = useState(null);
@@ -493,35 +496,41 @@ export default function InvestorDetail() {
           <div>
             <p className="text-sm font-semibold text-[#1F2937]">Compliance Decision</p>
             <p className="text-xs text-[#6B7280] mt-0.5">
-              {investor.scorecard_completed ? 'Scorecard complete — action buttons are enabled' : 'Generate AI scorecard first to enable action buttons'}
+              {!canDecide
+                ? 'View only — compliance decisions are restricted to Compliance Officers'
+                : investor.scorecard_completed
+                ? 'Scorecard complete — action buttons are enabled'
+                : 'Generate AI scorecard first to enable action buttons'}
             </p>
           </div>
-          <div className="flex items-center gap-3">
-            <button
-              disabled={!investor.scorecard_completed || !!deciding}
-              onClick={() => handleDecision('more_info')}
-              data-testid="btn-more-info"
-              className="px-4 py-2 text-sm font-semibold text-white bg-[#252523] border border-[#444444] rounded-sm hover:bg-[#333333] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              {deciding === 'more_info' ? <Loader2 size={14} className="animate-spin inline" /> : 'Request More Info'}
-            </button>
-            <button
-              disabled={!investor.scorecard_completed || !!deciding}
-              onClick={() => handleDecision('reject')}
-              data-testid="btn-reject"
-              className="px-4 py-2 text-sm font-semibold text-[#EF4444] bg-transparent border border-[#EF4444] rounded-sm hover:bg-[#EF4444]/5 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              {deciding === 'reject' ? <Loader2 size={14} className="animate-spin inline" /> : 'Reject'}
-            </button>
-            <button
-              disabled={!investor.scorecard_completed || !!deciding}
-              onClick={() => handleDecision('approve')}
-              data-testid="btn-approve"
-              className="px-5 py-2 text-sm font-semibold text-white bg-[#15803D] rounded-sm hover:bg-[#166534] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              {deciding === 'approve' ? <Loader2 size={14} className="animate-spin inline" /> : 'Approve'}
-            </button>
-          </div>
+          {canDecide && (
+            <div className="flex items-center gap-3">
+              <button
+                disabled={!investor.scorecard_completed || !!deciding}
+                onClick={() => handleDecision('more_info')}
+                data-testid="btn-more-info"
+                className="px-4 py-2 text-sm font-semibold text-white bg-[#252523] border border-[#444444] rounded-sm hover:bg-[#333333] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {deciding === 'more_info' ? <Loader2 size={14} className="animate-spin inline" /> : 'Request More Info'}
+              </button>
+              <button
+                disabled={!investor.scorecard_completed || !!deciding}
+                onClick={() => handleDecision('reject')}
+                data-testid="btn-reject"
+                className="px-4 py-2 text-sm font-semibold text-[#EF4444] bg-transparent border border-[#EF4444] rounded-sm hover:bg-[#EF4444]/5 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {deciding === 'reject' ? <Loader2 size={14} className="animate-spin inline" /> : 'Reject'}
+              </button>
+              <button
+                disabled={!investor.scorecard_completed || !!deciding}
+                onClick={() => handleDecision('approve')}
+                data-testid="btn-approve"
+                className="px-5 py-2 text-sm font-semibold text-white bg-[#15803D] rounded-sm hover:bg-[#166534] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {deciding === 'approve' ? <Loader2 size={14} className="animate-spin inline" /> : 'Approve'}
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </div>

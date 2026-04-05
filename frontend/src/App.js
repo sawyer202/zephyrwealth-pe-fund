@@ -8,6 +8,7 @@ import Investors from './pages/Investors';
 import InvestorOnboarding from './pages/InvestorOnboarding';
 import InvestorDetail from './pages/InvestorDetail';
 import Deals from './pages/Deals';
+import DealDetail from './pages/DealDetail';
 import Portfolio from './pages/Portfolio';
 import Reports from './pages/Reports';
 import Settings from './pages/Settings';
@@ -69,6 +70,7 @@ function AppRoutes() {
         <Route path="investors/new" element={<InvestorOnboarding />} />
         <Route path="investors/:id" element={<InvestorDetail />} />
         <Route path="deals" element={<Deals />} />
+        <Route path="deals/:id" element={<DealDetail />} />
         <Route path="portfolio" element={<Portfolio />} />
         <Route path="reports" element={<Reports />} />
         <Route path="settings" element={<Settings />} />

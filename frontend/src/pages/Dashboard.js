@@ -6,6 +6,10 @@ import {
   AlertTriangle,
   RefreshCw,
 } from 'lucide-react';
+import {
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
+  ResponsiveContainer, Cell,
+} from 'recharts';
 import KPICard from '../components/KPICard';
 import QueueTable from '../components/QueueTable';
 import { useAuth } from '../context/AuthContext';
@@ -23,6 +27,7 @@ export default function Dashboard() {
   const [stats, setStats] = useState(null);
   const [investors, setInvestors] = useState([]);
   const [deals, setDeals] = useState([]);
+  const [chartsData, setChartsData] = useState(null);
   const [activeTab, setActiveTab] = useState('investors');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -32,14 +37,22 @@ export default function Dashboard() {
     if (!silent) setLoading(true);
     else setRefreshing(true);
     try {
-      const [statsRes, investorsRes, dealsRes] = await Promise.all([
+      const [statsRes, investorsRes, dealsRes, chartsRes] = await Promise.all([
         fetch(`${API}/api/dashboard/stats`, { credentials: 'include' }),
         fetch(`${API}/api/investors`, { credentials: 'include' }),
         fetch(`${API}/api/deals`, { credentials: 'include' }),
+        fetch(`${API}/api/dashboard/charts`, { credentials: 'include' }),
       ]);
       if (statsRes.ok) setStats(await statsRes.json());
-      if (investorsRes.ok) setInvestors(await investorsRes.json());
-      if (dealsRes.ok) setDeals(await dealsRes.json());
+      if (investorsRes.ok) {
+        const d = await investorsRes.json();
+        setInvestors(Array.isArray(d) ? d : d.investors || []);
+      }
+      if (dealsRes.ok) {
+        const d = await dealsRes.json();
+        setDeals(Array.isArray(d) ? d : d.deals || []);
+      }
+      if (chartsRes.ok) setChartsData(await chartsRes.json());
     } catch (err) {
       console.error('Dashboard fetch error:', err);
     } finally {
@@ -118,6 +131,55 @@ export default function Dashboard() {
           subtitle="High risk"
         />
       </div>
+
+      {/* Charts */}
+      {chartsData && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-8" data-testid="charts-section">
+          {/* Investor Status Distribution */}
+          <div className="bg-white border border-[#E5E7EB] rounded-sm shadow-sm p-5">
+            <p className="text-xs font-semibold text-[#6B7280] uppercase tracking-wider mb-1">Investor Queue</p>
+            <p className="text-sm font-bold text-[#1F2937] mb-4">Status Distribution</p>
+            <ResponsiveContainer width="100%" height={180}>
+              <BarChart data={chartsData.investor_funnel} margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#F3F4F6" />
+                <XAxis dataKey="status" tick={{ fontSize: 11, fill: '#6B7280' }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fontSize: 11, fill: '#6B7280' }} axisLine={false} tickLine={false} allowDecimals={false} />
+                <Tooltip
+                  contentStyle={{ border: '1px solid #E5E7EB', borderRadius: '2px', fontSize: '12px' }}
+                  cursor={{ fill: '#F8F9FA' }}
+                />
+                <Bar dataKey="count" radius={[2, 2, 0, 0]}>
+                  {chartsData.investor_funnel.map((entry, i) => (
+                    <Cell key={i} fill={entry.color} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+
+          {/* Deal Pipeline Distribution */}
+          <div className="bg-white border border-[#E5E7EB] rounded-sm shadow-sm p-5">
+            <p className="text-xs font-semibold text-[#6B7280] uppercase tracking-wider mb-1">Deal Pipeline</p>
+            <p className="text-sm font-bold text-[#1F2937] mb-4">Deals by Stage</p>
+            <ResponsiveContainer width="100%" height={180}>
+              <BarChart data={chartsData.deal_pipeline} margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#F3F4F6" />
+                <XAxis dataKey="stage" tick={{ fontSize: 11, fill: '#6B7280' }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fontSize: 11, fill: '#6B7280' }} axisLine={false} tickLine={false} allowDecimals={false} />
+                <Tooltip
+                  contentStyle={{ border: '1px solid #E5E7EB', borderRadius: '2px', fontSize: '12px' }}
+                  cursor={{ fill: '#F8F9FA' }}
+                />
+                <Bar dataKey="count" radius={[2, 2, 0, 0]}>
+                  {chartsData.deal_pipeline.map((entry, i) => (
+                    <Cell key={i} fill={entry.color} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      )}
 
       {/* Queue Tables */}
       <div

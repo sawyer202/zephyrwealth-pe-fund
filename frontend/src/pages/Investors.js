@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Users, Search, Filter, Plus } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import RiskBadge from '../components/RiskBadge';
+import { useAuth } from '../context/AuthContext';
 
 const API = process.env.REACT_APP_BACKEND_URL;
 
@@ -23,6 +24,7 @@ function formatCurrency(v) {
 
 export default function Investors() {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [investors, setInvestors] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -31,7 +33,7 @@ export default function Investors() {
   useEffect(() => {
     fetch(`${API}/api/investors`, { credentials: 'include' })
       .then((r) => r.json())
-      .then(setInvestors)
+      .then((data) => setInvestors(Array.isArray(data) ? data : data.investors || data.data || []))
       .catch(console.error)
       .finally(() => setLoading(false));
   }, []);
@@ -63,13 +65,15 @@ export default function Investors() {
             <span className="text-2xl font-bold text-[#1B3A6B]">{investors.length}</span>
             <span>total</span>
           </div>
-          <button
-            onClick={() => navigate('/investors/new')}
-            data-testid="new-investor-btn"
-            className="flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-[#1B3A6B] text-white rounded-sm hover:bg-[#122A50] transition-colors"
-          >
-            <Plus size={15} /> New Investor
-          </button>
+          {user?.role === 'compliance' && (
+            <button
+              onClick={() => navigate('/investors/new')}
+              data-testid="new-investor-btn"
+              className="flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-[#1B3A6B] text-white rounded-sm hover:bg-[#122A50] transition-colors"
+            >
+              <Plus size={15} /> New Investor
+            </button>
+          )}
         </div>
       </div>
 
