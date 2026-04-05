@@ -58,6 +58,7 @@ async def startup():
     print("ZephyrWealth API v5 ready — modular architecture")
 
 
+@app.get("/health")
 @app.get("/api/health")
 async def health():
     return {"status": "ok", "service": "ZephyrWealth API", "version": "3.0.0"}
