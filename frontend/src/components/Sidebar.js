@@ -1,14 +1,8 @@
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import {
-  LayoutDashboard,
-  Users,
-  TrendingUp,
-  Briefcase,
-  FileText,
-  Settings,
-  LogOut,
-  Shield,
+  LayoutDashboard, Users, TrendingUp, Briefcase,
+  FileText, Settings, LogOut, Shield, Landmark, Handshake,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
@@ -17,6 +11,8 @@ const ALL_NAV_ITEMS = [
   { path: '/investors', icon: Users, label: 'Investors' },
   { path: '/deals', icon: TrendingUp, label: 'Deals' },
   { path: '/portfolio', icon: Briefcase, label: 'Portfolio' },
+  { path: '/capital-calls', icon: Landmark, label: 'Capital Calls', roles: ['compliance', 'risk'] },
+  { path: '/agents', icon: Handshake, label: 'Agents', roles: ['compliance'] },
   { path: '/reports', icon: FileText, label: 'Reports', roles: ['compliance'] },
   { path: '/settings', icon: Settings, label: 'Settings' },
 ];
@@ -69,7 +65,7 @@ export default function Sidebar({ onClose }) {
               key={path}
               to={path}
               onClick={onClose}
-              data-testid={`sidebar-nav-${label.toLowerCase()}`}
+              data-testid={`sidebar-nav-${label.toLowerCase().replace(/\s+/g, '-')}`}
               className={`flex items-center gap-3 px-6 py-2.5 text-sm font-medium transition-all duration-150 ${
                 isActive
                   ? 'text-white bg-[#1B3A6B] border-r-2 border-[#C9A84C]'

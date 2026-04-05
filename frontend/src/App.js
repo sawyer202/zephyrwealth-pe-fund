@@ -13,6 +13,10 @@ import DealDetail from './pages/DealDetail';
 import Portfolio from './pages/Portfolio';
 import Reports from './pages/Reports';
 import Settings from './pages/Settings';
+import Agents from './pages/Agents';
+import AgentDetail from './pages/AgentDetail';
+import CapitalCalls from './pages/CapitalCalls';
+import CapitalCallDetail from './pages/CapitalCallDetail';
 
 function LoadingScreen() {
   return (
@@ -73,6 +77,10 @@ function AppRoutes() {
         <Route path="deals" element={<Deals />} />
         <Route path="deals/:id" element={<DealDetail />} />
         <Route path="portfolio" element={<Portfolio />} />
+        <Route path="capital-calls" element={<CapitalCalls />} />
+        <Route path="capital-calls/:id" element={<CapitalCallDetail />} />
+        <Route path="agents" element={<Agents />} />
+        <Route path="agents/:id" element={<AgentDetail />} />
         <Route path="reports" element={<Reports />} />
         <Route path="settings" element={<Settings />} />
       </Route>

@@ -1,10 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
-  Users,
-  Clock,
-  TrendingUp,
-  AlertTriangle,
-  RefreshCw,
+  Users, Clock, TrendingUp, AlertTriangle, RefreshCw,
+  Landmark, DollarSign, ArrowDownToLine, Percent,
 } from 'lucide-react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
@@ -15,6 +12,13 @@ import QueueTable from '../components/QueueTable';
 import { useAuth } from '../context/AuthContext';
 
 const API = process.env.REACT_APP_BACKEND_URL;
+
+function formatUSD(v) {
+  if (!v && v !== 0) return '—';
+  if (v >= 1000000) return `$${(v / 1000000).toFixed(2)}M`;
+  if (v >= 1000) return `$${(v / 1000).toFixed(0)}K`;
+  return `$${Number(v).toLocaleString()}`;
+}
 
 function getGreeting() {
   const h = new Date().getHours();
@@ -98,8 +102,8 @@ export default function Dashboard() {
         </button>
       </div>
 
-      {/* KPI Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+      {/* KPI Cards — Investor & Deal Overview */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
         <KPICard
           title="Total Investors"
           value={loading ? '—' : stats?.total_investors ?? 0}
@@ -129,6 +133,42 @@ export default function Dashboard() {
           color="danger"
           testId="kpi-flagged-items"
           subtitle="High risk"
+        />
+      </div>
+
+      {/* KPI Cards — Capital */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+        <KPICard
+          title="Total Committed Capital"
+          value={loading ? '—' : formatUSD(stats?.total_committed_capital)}
+          icon={Landmark}
+          color="primary"
+          testId="kpi-committed-capital"
+          subtitle="Approved investors"
+        />
+        <KPICard
+          title="Total Capital Called"
+          value={loading ? '—' : formatUSD(stats?.total_capital_called)}
+          icon={ArrowDownToLine}
+          color="brand"
+          testId="kpi-capital-called"
+          subtitle="Issued drawdowns"
+        />
+        <KPICard
+          title="Total Uncalled"
+          value={loading ? '—' : formatUSD(stats?.total_uncalled)}
+          icon={DollarSign}
+          color="success"
+          testId="kpi-total-uncalled"
+          subtitle="Available capital"
+        />
+        <KPICard
+          title="Call Rate"
+          value={loading ? '—' : `${stats?.call_rate ?? 0}%`}
+          icon={Percent}
+          color={(stats?.call_rate || 0) > 80 ? 'danger' : 'warning'}
+          testId="kpi-call-rate"
+          subtitle="Called / committed"
         />
       </div>
 

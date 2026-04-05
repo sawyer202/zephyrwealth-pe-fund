@@ -15,6 +15,7 @@ import secrets
 import shutil
 import uuid
 import json
+import zipfile
 from pathlib import Path
 from bson import ObjectId
 from emergentintegrations.llm.chat import LlmChat, UserMessage
@@ -170,6 +171,50 @@ class DealCreateRequest(BaseModel):
 class DealStageUpdate(BaseModel):
     stage: str
     override_note: Optional[str] = None
+
+# ─── Phase 5 Pydantic Models ──────────────────────────────────────────────────
+class PlacementAgentCreate(BaseModel):
+    agent_name: str
+    company_name: str
+    email: str
+    phone: str
+    bank_name: str
+    bank_account_number: str
+    swift_code: str
+    vat_registered: bool
+    vat_number: Optional[str] = None
+
+class PlacementAgentUpdate(BaseModel):
+    agent_name: Optional[str] = None
+    company_name: Optional[str] = None
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    bank_name: Optional[str] = None
+    bank_account_number: Optional[str] = None
+    swift_code: Optional[str] = None
+    vat_registered: Optional[bool] = None
+    vat_number: Optional[str] = None
+
+class FundParticipationUpdate(BaseModel):
+    share_class: str
+    committed_capital: float
+    placement_agent_id: Optional[str] = None
+    deal_associations: Optional[List[str]] = []
+
+class CapitalCallCreate(BaseModel):
+    call_name: str
+    call_type: str
+    target_classes: List[str]
+    call_percentage: float
+    due_date: str
+    deal_id: Optional[str] = None
+
+class LineItemStatusUpdate(BaseModel):
+    status: str
+
+class TrailerFeeGenerateRequest(BaseModel):
+    year: int
+    agent_ids: Optional[List[str]] = None
 
 # ─── Deal Helpers ─────────────────────────────────────────────────────────────
 async def check_deal_mandate(sector: str, geography: str, irr: float) -> str:
@@ -751,7 +796,8 @@ async def startup():
     await seed_users()
     await seed_demo_data()
     await seed_demo_phase4()
-    print("ZephyrWealth API v4 ready")
+    await seed_demo_phase5()
+    print("ZephyrWealth API v5 ready")
 
 
 @app.get("/api/health")
@@ -830,7 +876,24 @@ async def get_dashboard_stats(current_user: dict = Depends(get_current_user)):
     deals_in_pipeline = await db.deals.count_documents({})
     flagged_investors = await db.investors.count_documents({"risk_rating": "high"})
     flagged_deals = await db.deals.count_documents({"risk_rating": "high"})
-    return {"total_investors": total_investors, "pending_kyc": pending_kyc, "deals_in_pipeline": deals_in_pipeline, "flagged_items": flagged_investors + flagged_deals}
+    # Capital KPIs
+    total_committed = 0.0
+    total_called = 0.0
+    async for inv in db.investors.find({"kyc_status": "approved", "committed_capital": {"$gt": 0}}):
+        total_committed += inv.get("committed_capital", 0) or 0
+        total_called += inv.get("capital_called", 0) or 0
+    total_uncalled = max(0.0, total_committed - total_called)
+    call_rate = round(total_called / total_committed * 100, 1) if total_committed > 0 else 0.0
+    return {
+        "total_investors": total_investors,
+        "pending_kyc": pending_kyc,
+        "deals_in_pipeline": deals_in_pipeline,
+        "flagged_items": flagged_investors + flagged_deals,
+        "total_committed_capital": total_committed,
+        "total_capital_called": total_called,
+        "total_uncalled": total_uncalled,
+        "call_rate": call_rate,
+    }
 
 # ─── Dashboard: Charts ───────────────────────────────────────────────────────
 @app.get("/api/dashboard/charts")
@@ -1812,11 +1875,20 @@ async def demo_reset(current_user: dict = Depends(get_current_user)):
     await db.fund_profile.delete_one({"fund_name": "Zephyr Caribbean Growth Fund I"})
     cleaned["fund_profile_reset"] = True
 
-    # 7. Re-seed Phase 4 pristine data
+    # 7. Clear Phase 5 data
+    r5a = await db.placement_agents.delete_many({})
+    r5b = await db.capital_calls.delete_many({})
+    r5c = await db.trailer_fee_invoices.delete_many({})
+    cleaned["placement_agents_cleared"] = r5a.deleted_count
+    cleaned["capital_calls_cleared"] = r5b.deleted_count
+    cleaned["trailer_fee_invoices_cleared"] = r5c.deleted_count
+
+    # 8. Re-seed Phase 4 pristine data
     await seed_demo_phase4()
+    await seed_demo_phase5()
     cleaned["seed_restored"] = True
 
-    # 8. Log the reset (in the freshly seeded audit log)
+    # 9. Log the reset (in the freshly seeded audit log)
     await db.audit_logs.insert_one({
         "user_id": current_user.get("_id"),
         "user_email": current_user.get("email", ""),
@@ -1830,7 +1902,7 @@ async def demo_reset(current_user: dict = Depends(get_current_user)):
     })
 
     return {
-        "message": "Demo data reset successful. Pristine Phase 4 data restored.",
+        "message": "Demo data reset successful. Pristine Phase 4 & 5 data restored.",
         "cleaned": cleaned,
     }
 
@@ -1928,6 +2000,15 @@ async def get_portfolio_summary(current_user: dict = Depends(get_current_user)):
             "health_score": health_score,
         })
 
+    # Capital Called vs Uncalled by share class
+    class_capital: dict = {"A": {"called": 0.0, "uncalled": 0.0}, "B": {"called": 0.0, "uncalled": 0.0}, "C": {"called": 0.0, "uncalled": 0.0}}
+    async for inv in db.investors.find({"committed_capital": {"$gt": 0}}):
+        cls = inv.get("share_class", "")
+        if cls in class_capital:
+            class_capital[cls]["called"] += inv.get("capital_called", 0) or 0
+            class_capital[cls]["uncalled"] += inv.get("capital_uncalled", 0) or (inv.get("committed_capital", 0) - (inv.get("capital_called", 0) or 0))
+    capital_by_class = [{"class_label": f"Class {k}", "called": round(v["called"], 2), "uncalled": round(v["uncalled"], 2)} for k, v in class_capital.items()]
+
     return {
         "kpis": {
             "total_portfolio_value": total_portfolio_value,
@@ -1940,8 +2021,727 @@ async def get_portfolio_summary(current_user: dict = Depends(get_current_user)):
             "geography_allocation": list(geo_map.values()),
             "irr_distribution": irr_distribution,
             "pipeline_stage_value": pipeline_stage_value,
+            "capital_by_class": capital_by_class,
         },
         "holdings": holdings,
     }
 
 
+# ─── Phase 5 Fund-Level Bank Details ─────────────────────────────────────────
+_FUND_BANK = {
+    "bank_name": "Bank of The Bahamas",
+    "account_name": "Zephyr Caribbean Growth Fund I",
+    "account_number": "0123456789",
+    "swift_code": "BAHABSNA",
+    "branch": "Nassau, New Providence, The Bahamas",
+}
+
+# ─── Phase 5: Investor Fund Participation ────────────────────────────────────
+@app.patch("/api/investors/{investor_id}/fund-participation")
+async def update_fund_participation(investor_id: str, body: FundParticipationUpdate, current_user: dict = Depends(get_current_user)):
+    if current_user["role"] != "compliance":
+        raise HTTPException(403, "Compliance role required")
+    try:
+        oid = ObjectId(investor_id)
+    except Exception:
+        raise HTTPException(400, "Invalid investor ID")
+    investor = await db.investors.find_one({"_id": oid})
+    if not investor:
+        raise HTTPException(404, "Investor not found")
+    existing_called = investor.get("capital_called", 0) or 0
+    update: dict = {
+        "share_class": body.share_class,
+        "committed_capital": body.committed_capital,
+        "deal_associations": body.deal_associations or [],
+        "placement_agent_id": body.placement_agent_id if body.placement_agent_id else None,
+        "capital_uncalled": max(0.0, body.committed_capital - existing_called),
+    }
+    await db.investors.update_one({"_id": oid}, {"$set": update})
+    await db.audit_logs.insert_one({
+        "user_id": current_user.get("_id"),
+        "user_email": current_user.get("email", ""),
+        "user_role": current_user.get("role", ""),
+        "user_name": current_user.get("name", ""),
+        "action": "investor_fund_participation_updated",
+        "target_id": investor_id, "target_type": "investor",
+        "timestamp": datetime.now(timezone.utc),
+        "notes": f"Fund participation: Class {body.share_class}, committed ${body.committed_capital:,.0f}",
+    })
+    return {"message": "Fund participation updated", "share_class": body.share_class, "committed_capital": body.committed_capital}
+
+
+# ─── Phase 5: Placement Agents ───────────────────────────────────────────────
+def _serialize_agent(doc: dict) -> dict:
+    doc["id"] = str(doc["_id"])
+    doc.pop("_id", None)
+    if isinstance(doc.get("created_at"), datetime):
+        doc["created_at"] = doc["created_at"].isoformat()
+    return doc
+
+@app.get("/api/agents")
+async def get_agents(current_user: dict = Depends(get_current_user)):
+    agents = []
+    async for doc in db.placement_agents.find().sort("agent_name", 1):
+        doc = _serialize_agent(doc)
+        agent_id = doc["id"]
+        doc["linked_investors"] = await db.investors.count_documents({"placement_agent_id": agent_id})
+        total_fees = 0.0
+        async for inv in db.trailer_fee_invoices.find({"agent_id": agent_id, "status": {"$ne": "draft"}}):
+            total_fees += inv.get("total_due", 0) or 0
+        doc["total_fees_invoiced"] = total_fees
+        agents.append(doc)
+    return agents
+
+@app.post("/api/agents")
+async def create_agent(body: PlacementAgentCreate, current_user: dict = Depends(get_current_user)):
+    if current_user["role"] != "compliance":
+        raise HTTPException(403, "Compliance role required")
+    doc = {
+        "agent_name": body.agent_name, "company_name": body.company_name,
+        "email": body.email, "phone": body.phone,
+        "bank_name": body.bank_name, "bank_account_number": body.bank_account_number,
+        "swift_code": body.swift_code, "vat_registered": body.vat_registered,
+        "vat_number": body.vat_number, "created_by": current_user.get("_id"),
+        "created_at": datetime.now(timezone.utc),
+    }
+    result = await db.placement_agents.insert_one(doc)
+    doc["id"] = str(result.inserted_id)
+    doc.pop("_id", None)
+    doc["created_at"] = doc["created_at"].isoformat()
+    return doc
+
+@app.get("/api/agents/{agent_id}")
+async def get_agent(agent_id: str, current_user: dict = Depends(get_current_user)):
+    try:
+        oid = ObjectId(agent_id)
+    except Exception:
+        raise HTTPException(400, "Invalid agent ID")
+    doc = await db.placement_agents.find_one({"_id": oid})
+    if not doc:
+        raise HTTPException(404, "Agent not found")
+    doc = _serialize_agent(doc)
+    linked = []
+    async for inv in db.investors.find({"placement_agent_id": agent_id}):
+        linked.append({
+            "id": str(inv["_id"]), "name": inv.get("legal_name") or inv.get("name", ""),
+            "share_class": inv.get("share_class", "C"),
+            "committed_capital": inv.get("committed_capital", 0) or 0,
+            "kyc_status": inv.get("kyc_status", ""),
+        })
+    doc["linked_investors"] = linked
+    invoices = []
+    async for tf in db.trailer_fee_invoices.find({"agent_id": agent_id}).sort("created_at", -1):
+        invoices.append({
+            "id": str(tf["_id"]), "invoice_number": tf.get("invoice_number", ""),
+            "period_year": tf.get("period_year"),
+            "total_due": tf.get("total_due", 0), "status": tf.get("status", "draft"),
+            "issued_date": tf.get("issued_date").isoformat() if isinstance(tf.get("issued_date"), datetime) else tf.get("issued_date"),
+        })
+    doc["invoices"] = invoices
+    doc["total_fees_invoiced"] = sum(i["total_due"] for i in invoices if i.get("status") != "draft")
+    return doc
+
+@app.patch("/api/agents/{agent_id}")
+async def update_agent(agent_id: str, body: PlacementAgentUpdate, current_user: dict = Depends(get_current_user)):
+    if current_user["role"] != "compliance":
+        raise HTTPException(403, "Compliance role required")
+    try:
+        oid = ObjectId(agent_id)
+    except Exception:
+        raise HTTPException(400, "Invalid agent ID")
+    update = {k: v for k, v in body.dict().items() if v is not None}
+    if not update:
+        raise HTTPException(400, "No fields to update")
+    await db.placement_agents.update_one({"_id": oid}, {"$set": update})
+    return {"message": "Agent updated"}
+
+
+# ─── Phase 5: Capital Calls ──────────────────────────────────────────────────
+def _serialize_call(doc: dict) -> dict:
+    doc["id"] = str(doc["_id"])
+    doc.pop("_id", None)
+    for k in ("call_date", "due_date", "created_at"):
+        if isinstance(doc.get(k), datetime):
+            doc[k] = doc[k].isoformat()
+    li = doc.get("line_items", [])
+    received = sum(1 for x in li if x.get("status") == "received")
+    doc["pct_received"] = round(received / len(li) * 100, 1) if li else 0.0
+    return doc
+
+@app.get("/api/capital-calls")
+async def get_capital_calls(current_user: dict = Depends(get_current_user)):
+    if current_user["role"] not in ("compliance", "risk"):
+        raise HTTPException(403, "Compliance or Risk role required")
+    calls = []
+    async for doc in db.capital_calls.find().sort("call_date", -1):
+        calls.append(_serialize_call(doc))
+    return calls
+
+@app.post("/api/capital-calls")
+async def create_capital_call(body: CapitalCallCreate, current_user: dict = Depends(get_current_user)):
+    if current_user["role"] != "compliance":
+        raise HTTPException(403, "Compliance role required")
+    now = datetime.now(timezone.utc)
+    try:
+        due_dt = datetime.fromisoformat(body.due_date.replace("Z", "+00:00")).replace(tzinfo=timezone.utc)
+    except Exception:
+        due_dt = now + timedelta(days=30)
+    line_items = []
+    if body.call_type == "fund_level":
+        async for inv in db.investors.find({"share_class": {"$in": body.target_classes}, "kyc_status": "approved", "committed_capital": {"$gt": 0}}):
+            committed = inv.get("committed_capital", 0) or 0
+            line_items.append({"investor_id": str(inv["_id"]), "investor_name": inv.get("legal_name") or inv.get("name", ""), "share_class": inv.get("share_class", "A"), "committed_capital": committed, "call_amount": round(committed * body.call_percentage / 100, 2), "status": "pending"})
+    elif body.call_type == "deal_specific":
+        if not body.deal_id:
+            raise HTTPException(400, "deal_id required for deal_specific")
+        async for inv in db.investors.find({"share_class": "C", "kyc_status": "approved", "deal_associations": body.deal_id, "committed_capital": {"$gt": 0}}):
+            committed = inv.get("committed_capital", 0) or 0
+            line_items.append({"investor_id": str(inv["_id"]), "investor_name": inv.get("legal_name") or inv.get("name", ""), "share_class": "C", "committed_capital": committed, "call_amount": round(committed * body.call_percentage / 100, 2), "status": "pending"})
+    total_amount = sum(li["call_amount"] for li in line_items)
+    doc = {"call_name": body.call_name, "call_date": now, "due_date": due_dt, "deal_id": body.deal_id, "call_type": body.call_type, "target_classes": body.target_classes, "call_percentage": body.call_percentage, "total_amount": total_amount, "status": "draft", "line_items": line_items, "created_by": current_user.get("_id"), "created_at": now}
+    result = await db.capital_calls.insert_one(doc)
+    doc["id"] = str(result.inserted_id)
+    doc.pop("_id", None)
+    for k in ("call_date", "due_date", "created_at"):
+        if isinstance(doc.get(k), datetime):
+            doc[k] = doc[k].isoformat()
+    doc["pct_received"] = 0.0
+    return doc
+
+@app.post("/api/capital-calls/{call_id}/issue")
+async def issue_capital_call(call_id: str, current_user: dict = Depends(get_current_user)):
+    if current_user["role"] != "compliance":
+        raise HTTPException(403, "Compliance role required")
+    try:
+        oid = ObjectId(call_id)
+    except Exception:
+        raise HTTPException(400, "Invalid capital call ID")
+    call = await db.capital_calls.find_one({"_id": oid})
+    if not call:
+        raise HTTPException(404, "Capital call not found")
+    if call.get("status") != "draft":
+        raise HTTPException(400, "Capital call is not in draft status")
+    for li in call.get("line_items", []):
+        inv_id = li.get("investor_id")
+        if inv_id:
+            try:
+                inv_oid = ObjectId(inv_id)
+                inv = await db.investors.find_one({"_id": inv_oid})
+                if inv:
+                    existing = inv.get("capital_called", 0) or 0
+                    new_called = existing + (li.get("call_amount", 0) or 0)
+                    committed = inv.get("committed_capital", 0) or 0
+                    await db.investors.update_one({"_id": inv_oid}, {"$set": {"capital_called": new_called, "capital_uncalled": max(0, committed - new_called)}})
+            except Exception:
+                pass
+    await db.capital_calls.update_one({"_id": oid}, {"$set": {"status": "issued"}})
+    await db.audit_logs.insert_one({"user_id": current_user.get("_id"), "user_email": current_user.get("email", ""), "user_role": current_user.get("role", ""), "user_name": current_user.get("name", ""), "action": "capital_call_issued", "target_id": call_id, "target_type": "capital_call", "timestamp": datetime.now(timezone.utc), "notes": f"Capital call issued: {call.get('call_name')} | Total: ${call.get('total_amount', 0):,.0f}"})
+    return {"message": "Capital call issued", "call_id": call_id}
+
+@app.get("/api/capital-calls/{call_id}")
+async def get_capital_call(call_id: str, current_user: dict = Depends(get_current_user)):
+    if current_user["role"] not in ("compliance", "risk"):
+        raise HTTPException(403, "Compliance or Risk role required")
+    try:
+        oid = ObjectId(call_id)
+    except Exception:
+        raise HTTPException(400, "Invalid capital call ID")
+    doc = await db.capital_calls.find_one({"_id": oid})
+    if not doc:
+        raise HTTPException(404, "Capital call not found")
+    doc = _serialize_call(doc)
+    # Compute default interest
+    now = datetime.now(timezone.utc)
+    try:
+        due_dt = datetime.fromisoformat(doc["due_date"].replace("Z", "+00:00"))
+        if due_dt.tzinfo is None:
+            due_dt = due_dt.replace(tzinfo=timezone.utc)
+    except Exception:
+        due_dt = now
+    for li in doc.get("line_items", []):
+        if li.get("status") == "defaulted":
+            days_overdue = max(0, (now - due_dt).days)
+            li["accrued_interest"] = round((li.get("call_amount", 0) or 0) * 0.08 / 365 * days_overdue, 2)
+            li["days_overdue"] = days_overdue
+        else:
+            li["accrued_interest"] = 0
+            li["days_overdue"] = 0
+    return doc
+
+@app.patch("/api/capital-calls/{call_id}/line-items/{investor_id}")
+async def update_line_item(call_id: str, investor_id: str, body: LineItemStatusUpdate, current_user: dict = Depends(get_current_user)):
+    if current_user["role"] != "compliance":
+        raise HTTPException(403, "Compliance role required")
+    if body.status not in ("pending", "received", "defaulted"):
+        raise HTTPException(400, "Invalid status. Must be: pending, received, or defaulted")
+    try:
+        oid = ObjectId(call_id)
+    except Exception:
+        raise HTTPException(400, "Invalid capital call ID")
+    call = await db.capital_calls.find_one({"_id": oid})
+    if not call:
+        raise HTTPException(404, "Capital call not found")
+    line_items = call.get("line_items", [])
+    updated = False
+    for li in line_items:
+        if li.get("investor_id") == investor_id:
+            li["status"] = body.status
+            updated = True
+            break
+    if not updated:
+        raise HTTPException(404, "Investor not found in this capital call")
+    await db.capital_calls.update_one({"_id": oid}, {"$set": {"line_items": line_items}})
+    await db.audit_logs.insert_one({"user_id": current_user.get("_id"), "user_email": current_user.get("email", ""), "user_role": current_user.get("role", ""), "user_name": current_user.get("name", ""), "action": "capital_call_line_item_updated", "target_id": call_id, "target_type": "capital_call", "timestamp": datetime.now(timezone.utc), "notes": f"Line item for investor {investor_id} → {body.status}"})
+    return {"message": f"Line item updated to {body.status}"}
+
+
+# ─── Phase 5: Capital Call Notice PDF ────────────────────────────────────────
+def _build_notice_pdf(call: dict, li: dict, fund_profile: dict, user_name: str, user_role: str) -> BytesIO:
+    S = _pdf_styles()
+    ts = datetime.now(timezone.utc).strftime("%d %b %Y, %H:%M UTC")
+    buf = BytesIO()
+    doc_obj = SimpleDocTemplate(buf, pagesize=A4, topMargin=33*mm, bottomMargin=22*mm, leftMargin=15*mm, rightMargin=15*mm)
+    hf = _partial(_hf_callback, title_line2="CAPITAL CALL NOTICE — CONFIDENTIAL", user_name=user_name, user_role=user_role, ts=ts)
+    story = []
+    fund_name = fund_profile.get("fund_name", "Zephyr Caribbean Growth Fund I") if fund_profile else "Zephyr Caribbean Growth Fund I"
+    license_num = fund_profile.get("license_number", "SCB-2024-PE-0042") if fund_profile else "SCB-2024-PE-0042"
+    story.append(Paragraph("CAPITAL CALL NOTICE", ParagraphStyle("notitle", parent=getSampleStyleSheet()['Normal'], fontSize=20, textColor=rl_colors.HexColor('#1B3A6B'), fontName='Helvetica-Bold', spaceAfter=2, alignment=1)))
+    story.append(Paragraph(fund_name, ParagraphStyle("nosub", parent=getSampleStyleSheet()['Normal'], fontSize=12, textColor=rl_colors.HexColor('#00A8C6'), fontName='Helvetica', spaceAfter=2, alignment=1)))
+    story.append(Paragraph(f"SCB License: {license_num}", ParagraphStyle("nosc", parent=getSampleStyleSheet()['Normal'], fontSize=9, textColor=rl_colors.HexColor('#6B7280'), fontName='Helvetica', spaceAfter=6, alignment=1)))
+    story.append(HRFlowable(width="100%", thickness=1, color=rl_colors.HexColor('#1B3A6B'), spaceAfter=6))
+    story.append(Paragraph("Fund Details", S['h2']))
+    story.append(Table([
+        ['Field', 'Value'],
+        ['Fund Name', fund_name],
+        ['Fund Manager', fund_profile.get("fund_manager", "Zephyr Asset Management Ltd") if fund_profile else "Zephyr Asset Management Ltd"],
+        ['SCB License', license_num],
+        ['Call Reference', call.get("call_name", "")],
+        ['Call Date', call.get("call_date", "")[:10] if call.get("call_date") else "—"],
+        ['Due Date', call.get("due_date", "")[:10] if call.get("due_date") else "—"],
+    ], colWidths=[55*mm, 115*mm], style=_tbl_style()))
+    story.append(Spacer(1, 5*mm))
+    story.append(Paragraph("Investor Details", S['h2']))
+    story.append(Table([
+        ['Field', 'Value'],
+        ['Legal Name', li.get("investor_name", "")],
+        ['Share Class', f"Class {li.get('share_class', '—')}"],
+        ['Committed Capital', f"USD {li.get('committed_capital', 0):,.2f}"],
+    ], colWidths=[55*mm, 115*mm], style=_tbl_style()))
+    story.append(Spacer(1, 5*mm))
+    story.append(Paragraph("Capital Call Details", S['h2']))
+    story.append(Table([
+        ['Field', 'Value'],
+        ['Call Name', call.get("call_name", "")],
+        ['Call Type', call.get("call_type", "").replace("_", " ").title()],
+        ['Call Percentage', f"{call.get('call_percentage', 0)}% of Committed Capital"],
+        ['Amount Due from Investor', f"USD {li.get('call_amount', 0):,.2f}"],
+        ['Payment Due Date', call.get("due_date", "")[:10] if call.get("due_date") else "—"],
+    ], colWidths=[70*mm, 100*mm], style=_tbl_style()))
+    story.append(Spacer(1, 5*mm))
+    story.append(Paragraph("Payment Instructions", S['h2']))
+    ref = f"{li.get('investor_name', '')} — {call.get('call_name', '')}"
+    story.append(Table([
+        ['Field', 'Details'],
+        ['Bank Name', _FUND_BANK["bank_name"]],
+        ['Account Name', _FUND_BANK["account_name"]],
+        ['Account Number', _FUND_BANK["account_number"]],
+        ['SWIFT / BIC', _FUND_BANK["swift_code"]],
+        ['Branch', _FUND_BANK["branch"]],
+        ['Payment Reference', ref],
+        ['Amount', f"USD {li.get('call_amount', 0):,.2f}"],
+    ], colWidths=[55*mm, 115*mm], style=_tbl_style()))
+    story.append(Spacer(1, 5*mm))
+    story.append(Paragraph("Default Notice", S['h2']))
+    story.append(Paragraph("Failure to fund by the due date will result in interest accruing at 8% per annum on the outstanding amount. After 30 days of non-payment, LP forfeiture provisions under the Subscription Agreement apply. For questions, contact compliance@zephyrwealth.ai.", S['body']))
+    story.append(Spacer(1, 8*mm))
+    story.append(HRFlowable(width="100%", thickness=0.5, color=rl_colors.HexColor('#E5E7EB'), spaceAfter=3))
+    story.append(Paragraph(f"Prepared by: {user_name} ({user_role.title()})  |  Date: {ts[:11]}", S['small']))
+    story.append(Paragraph("Confidential — Zephyr Asset Management Ltd | SCB Licensed Fund", S['small']))
+    doc_obj.build(story, onFirstPage=hf, onLaterPages=hf)
+    buf.seek(0)
+    return buf
+
+@app.get("/api/capital-calls/{call_id}/notice-pdf/{investor_id}")
+async def get_notice_pdf(call_id: str, investor_id: str, current_user: dict = Depends(get_current_user)):
+    if current_user["role"] not in ("compliance", "risk"):
+        raise HTTPException(403, "Compliance or Risk role required")
+    try:
+        oid = ObjectId(call_id)
+    except Exception:
+        raise HTTPException(400, "Invalid capital call ID")
+    call = await db.capital_calls.find_one({"_id": oid})
+    if not call:
+        raise HTTPException(404, "Capital call not found")
+    call_d = _serialize_call(call)
+    li = next((x for x in call_d.get("line_items", []) if x.get("investor_id") == investor_id), None)
+    if not li:
+        raise HTTPException(404, "Investor not in this capital call")
+    fund_profile = await db.fund_profile.find_one({})
+    u_name = current_user.get("name", current_user.get("email", "Unknown"))
+    u_role = current_user["role"]
+    buf = _build_notice_pdf(call_d, li, fund_profile, u_name, u_role)
+    safe_name = li.get("investor_name", investor_id).replace(" ", "_")
+    return StreamingResponse(buf, media_type="application/pdf", headers={"Content-Disposition": f'attachment; filename="CapitalCallNotice_{safe_name}.pdf"'})
+
+@app.get("/api/capital-calls/{call_id}/notices")
+async def get_all_notices(call_id: str, current_user: dict = Depends(get_current_user)):
+    if current_user["role"] not in ("compliance", "risk"):
+        raise HTTPException(403, "Compliance or Risk role required")
+    try:
+        oid = ObjectId(call_id)
+    except Exception:
+        raise HTTPException(400, "Invalid capital call ID")
+    call = await db.capital_calls.find_one({"_id": oid})
+    if not call:
+        raise HTTPException(404, "Capital call not found")
+    call_d = _serialize_call(call)
+    line_items = call_d.get("line_items", [])
+    fund_profile = await db.fund_profile.find_one({})
+    u_name = current_user.get("name", current_user.get("email", "Unknown"))
+    u_role = current_user["role"]
+    if len(line_items) == 1:
+        buf = _build_notice_pdf(call_d, line_items[0], fund_profile, u_name, u_role)
+        safe = line_items[0].get("investor_name", "Investor").replace(" ", "_")
+        return StreamingResponse(buf, media_type="application/pdf", headers={"Content-Disposition": f'attachment; filename="CapitalCallNotice_{safe}.pdf"'})
+    zip_buf = BytesIO()
+    with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for li in line_items:
+            pdf_buf = _build_notice_pdf(call_d, li, fund_profile, u_name, u_role)
+            safe = li.get("investor_name", li.get("investor_id", "Investor")).replace(" ", "_")
+            zf.writestr(f"CapitalCallNotice_{safe}.pdf", pdf_buf.read())
+    zip_buf.seek(0)
+    safe_call = call_d.get("call_name", call_id).replace(" ", "_").replace("/", "-")
+    return StreamingResponse(zip_buf, media_type="application/zip", headers={"Content-Disposition": f'attachment; filename="CallNotices_{safe_call}.zip"'})
+
+@app.get("/api/capital-calls/{call_id}/export-csv")
+async def export_capital_call_csv(call_id: str, current_user: dict = Depends(get_current_user)):
+    if current_user["role"] not in ("compliance", "risk"):
+        raise HTTPException(403, "Compliance or Risk role required")
+    try:
+        oid = ObjectId(call_id)
+    except Exception:
+        raise HTTPException(400, "Invalid capital call ID")
+    call = await db.capital_calls.find_one({"_id": oid})
+    if not call:
+        raise HTTPException(404, "Capital call not found")
+    rows = ["Investor Name,Share Class,Committed Capital,Call Amount,Status"]
+    for li in call.get("line_items", []):
+        rows.append(f"{li.get('investor_name','')},{li.get('share_class','')},{li.get('committed_capital',0)},{li.get('call_amount',0)},{li.get('status','')}")
+    csv_str = "\n".join(rows)
+    buf = BytesIO(csv_str.encode("utf-8"))
+    safe = call.get("call_name", call_id).replace(" ", "_")
+    return StreamingResponse(buf, media_type="text/csv", headers={"Content-Disposition": f'attachment; filename="CapitalCall_{safe}.csv"'})
+
+
+# ─── Phase 5: Trailer Fee Invoices ───────────────────────────────────────────
+def _serialize_tf(doc: dict) -> dict:
+    doc["id"] = str(doc["_id"])
+    doc.pop("_id", None)
+    for k in ("period_start", "period_end", "issued_date", "due_date", "created_at"):
+        if isinstance(doc.get(k), datetime):
+            doc[k] = doc[k].isoformat()
+    return doc
+
+@app.post("/api/trailer-fees/generate")
+async def generate_trailer_fees(body: TrailerFeeGenerateRequest, current_user: dict = Depends(get_current_user)):
+    if current_user["role"] != "compliance":
+        raise HTTPException(403, "Compliance role required")
+    if body.agent_ids:
+        try:
+            agent_oids = [ObjectId(a) for a in body.agent_ids]
+        except Exception:
+            raise HTTPException(400, "Invalid agent ID in list")
+        agents_cur = db.placement_agents.find({"_id": {"$in": agent_oids}})
+    else:
+        agents_cur = db.placement_agents.find()
+    period_start = datetime(body.year, 1, 1, tzinfo=timezone.utc)
+    period_end = datetime(body.year, 12, 31, tzinfo=timezone.utc)
+    now = datetime.now(timezone.utc)
+    invoices = []
+    async for agent in agents_cur:
+        agent_id = str(agent["_id"])
+        line_items = []
+        subtotal = 0.0
+        async for inv in db.investors.find({"placement_agent_id": agent_id, "share_class": "C"}):
+            committed = inv.get("committed_capital", 0) or 0
+            if committed <= 0:
+                continue
+            fee_amount = round(committed * 0.0075, 2)
+            deal_names = []
+            for did in (inv.get("deal_associations") or []):
+                try:
+                    deal = await db.deals.find_one({"_id": ObjectId(did)})
+                    if deal:
+                        deal_names.append(deal.get("company_name") or deal.get("name", ""))
+                except Exception:
+                    pass
+            line_items.append({"investor_id": str(inv["_id"]), "investor_name": inv.get("legal_name") or inv.get("name", ""), "deal_name": ", ".join(deal_names) if deal_names else "General Fund", "committed_capital": committed, "fee_rate": 0.0075, "fee_amount": fee_amount})
+            subtotal += fee_amount
+        if not line_items:
+            continue
+        vat_applicable = bool(agent.get("vat_registered", False))
+        vat_amount = round(subtotal * 0.10, 2) if vat_applicable else 0.0
+        total_due = round(subtotal + vat_amount, 2)
+        existing = await db.trailer_fee_invoices.count_documents({"agent_id": agent_id, "period_year": body.year})
+        seq = existing + 1
+        inv_doc = {"agent_id": agent_id, "agent_name": agent.get("agent_name", ""), "invoice_number": f"TF-{body.year}-{str(seq).zfill(3)}", "period_year": body.year, "period_start": period_start, "period_end": period_end, "line_items": line_items, "subtotal": subtotal, "vat_applicable": vat_applicable, "vat_amount": vat_amount, "total_due": total_due, "status": "draft", "issued_date": None, "due_date": now + timedelta(days=30), "created_by": current_user.get("_id"), "created_at": now}
+        result = await db.trailer_fee_invoices.insert_one(inv_doc)
+        inv_doc = _serialize_tf(inv_doc)
+        inv_doc["id"] = str(result.inserted_id)
+        invoices.append(inv_doc)
+    return {"invoices": invoices, "count": len(invoices)}
+
+@app.get("/api/trailer-fees")
+async def get_trailer_fees(current_user: dict = Depends(get_current_user)):
+    if current_user["role"] not in ("compliance", "risk"):
+        raise HTTPException(403, "Compliance or Risk role required")
+    result = []
+    async for doc in db.trailer_fee_invoices.find().sort("created_at", -1):
+        result.append(_serialize_tf(doc))
+    return result
+
+@app.get("/api/trailer-fees/{tf_id}")
+async def get_trailer_fee(tf_id: str, current_user: dict = Depends(get_current_user)):
+    if current_user["role"] not in ("compliance", "risk"):
+        raise HTTPException(403, "Compliance or Risk role required")
+    try:
+        oid = ObjectId(tf_id)
+    except Exception:
+        raise HTTPException(400, "Invalid invoice ID")
+    doc = await db.trailer_fee_invoices.find_one({"_id": oid})
+    if not doc:
+        raise HTTPException(404, "Trailer fee invoice not found")
+    return _serialize_tf(doc)
+
+@app.post("/api/trailer-fees/{tf_id}/issue")
+async def issue_trailer_fee(tf_id: str, current_user: dict = Depends(get_current_user)):
+    if current_user["role"] != "compliance":
+        raise HTTPException(403, "Compliance role required")
+    try:
+        oid = ObjectId(tf_id)
+    except Exception:
+        raise HTTPException(400, "Invalid invoice ID")
+    doc = await db.trailer_fee_invoices.find_one({"_id": oid})
+    if not doc:
+        raise HTTPException(404, "Invoice not found")
+    if doc.get("status") != "draft":
+        raise HTTPException(400, "Invoice is not in draft status")
+    now = datetime.now(timezone.utc)
+    await db.trailer_fee_invoices.update_one({"_id": oid}, {"$set": {"status": "issued", "issued_date": now, "due_date": now + timedelta(days=30)}})
+    return {"message": "Invoice issued"}
+
+@app.post("/api/trailer-fees/{tf_id}/mark-paid")
+async def mark_trailer_fee_paid(tf_id: str, current_user: dict = Depends(get_current_user)):
+    if current_user["role"] != "compliance":
+        raise HTTPException(403, "Compliance role required")
+    try:
+        oid = ObjectId(tf_id)
+    except Exception:
+        raise HTTPException(400, "Invalid invoice ID")
+    doc = await db.trailer_fee_invoices.find_one({"_id": oid})
+    if not doc:
+        raise HTTPException(404, "Invoice not found")
+    await db.trailer_fee_invoices.update_one({"_id": oid}, {"$set": {"status": "paid"}})
+    return {"message": "Invoice marked as paid"}
+
+@app.get("/api/trailer-fees/{tf_id}/pdf")
+async def get_trailer_fee_pdf(tf_id: str, current_user: dict = Depends(get_current_user)):
+    if current_user["role"] not in ("compliance", "risk"):
+        raise HTTPException(403, "Compliance or Risk role required")
+    try:
+        oid = ObjectId(tf_id)
+    except Exception:
+        raise HTTPException(400, "Invalid invoice ID")
+    doc = await db.trailer_fee_invoices.find_one({"_id": oid})
+    if not doc:
+        raise HTTPException(404, "Invoice not found")
+    S = _pdf_styles()
+    ts = datetime.now(timezone.utc).strftime("%d %b %Y, %H:%M UTC")
+    u_name = current_user.get("name", current_user.get("email", "Unknown"))
+    u_role = current_user["role"]
+    buf = BytesIO()
+    pdf_doc = SimpleDocTemplate(buf, pagesize=A4, topMargin=33*mm, bottomMargin=22*mm, leftMargin=15*mm, rightMargin=15*mm)
+    hf = _partial(_hf_callback, title_line2="TRAILER FEE INVOICE — CONFIDENTIAL", user_name=u_name, user_role=u_role, ts=ts)
+    story = []
+    inv_num = doc.get("invoice_number", f"TF-{doc.get('period_year', '')}-001")
+    agent_name = doc.get("agent_name", "")
+    story.append(Paragraph("TRAILER FEE INVOICE", ParagraphStyle("tfi_title", parent=getSampleStyleSheet()['Normal'], fontSize=20, textColor=rl_colors.HexColor('#1B3A6B'), fontName='Helvetica-Bold', spaceAfter=2, alignment=1)))
+    story.append(Paragraph("Zephyr Asset Management Ltd | ZephyrWealth.ai", ParagraphStyle("tfi_sub", parent=getSampleStyleSheet()['Normal'], fontSize=10, textColor=rl_colors.HexColor('#6B7280'), fontName='Helvetica', spaceAfter=6, alignment=1)))
+    story.append(HRFlowable(width="100%", thickness=1, color=rl_colors.HexColor('#1B3A6B'), spaceAfter=6))
+    period_y = doc.get("period_year", "")
+    issued_dt = doc.get("issued_date")
+    issued_str = issued_dt.strftime("%d %b %Y") if isinstance(issued_dt, datetime) else (issued_dt[:10] if issued_dt else ts[:11])
+    due_dt = doc.get("due_date")
+    due_str = due_dt.strftime("%d %b %Y") if isinstance(due_dt, datetime) else (due_dt[:10] if due_dt else "Net 30")
+    story.append(Paragraph("Invoice Details", S['h2']))
+    story.append(Table([
+        ['Field', 'Value'],
+        ['Invoice Number', inv_num],
+        ['Period', str(period_y)],
+        ['Date Issued', issued_str],
+        ['Due Date', due_str],
+        ['Status', doc.get("status", "draft").upper()],
+    ], colWidths=[55*mm, 115*mm], style=_tbl_style()))
+    story.append(Spacer(1, 5*mm))
+    story.append(Paragraph("Bill To", S['h2']))
+    story.append(Table([
+        ['Field', 'Value'],
+        ['Agent Name', agent_name],
+        ['Company', doc.get("company_name", "—") if doc.get("company_name") else "—"],
+        ['Email', "—"],
+    ], colWidths=[55*mm, 115*mm], style=_tbl_style()))
+    story.append(Spacer(1, 5*mm))
+    story.append(Paragraph("Fee Schedule", S['h2']))
+    li_data = [['Investor Name', 'Deal Name', 'Committed Capital', 'Rate', 'Fee Amount']]
+    for li in doc.get("line_items", []):
+        li_data.append([li.get("investor_name", ""), li.get("deal_name", "General"), f"USD {li.get('committed_capital', 0):,.2f}", f"{li.get('fee_rate', 0.0075)*100:.2f}%", f"USD {li.get('fee_amount', 0):,.2f}"])
+    fee_tbl = Table(li_data, colWidths=[45*mm, 40*mm, 35*mm, 15*mm, 35*mm])
+    fee_tbl.setStyle(_tbl_style())
+    story.append(fee_tbl)
+    story.append(Spacer(1, 5*mm))
+    summary_data = [['Item', 'Amount'], ['Subtotal', f"USD {doc.get('subtotal', 0):,.2f}"]]
+    if doc.get("vat_applicable"):
+        summary_data.append(['VAT (10%)', f"USD {doc.get('vat_amount', 0):,.2f}"])
+    summary_data.append(['TOTAL DUE', f"USD {doc.get('total_due', 0):,.2f}"])
+    s_tbl = Table(summary_data, colWidths=[100*mm, 70*mm])
+    s_tbl.setStyle(_tbl_style())
+    story.append(s_tbl)
+    story.append(Spacer(1, 5*mm))
+    story.append(Paragraph("Payment Instructions", S['h2']))
+    story.append(Table([
+        ['Field', 'Details'],
+        ['Bank Name', _FUND_BANK["bank_name"]],
+        ['Account Name', _FUND_BANK["account_name"]],
+        ['Account Number', _FUND_BANK["account_number"]],
+        ['SWIFT / BIC', _FUND_BANK["swift_code"]],
+        ['Reference', inv_num],
+    ], colWidths=[55*mm, 115*mm], style=_tbl_style()))
+    story.append(Spacer(1, 5*mm))
+    story.append(HRFlowable(width="100%", thickness=0.5, color=rl_colors.HexColor('#E5E7EB'), spaceAfter=3))
+    story.append(Paragraph(f"Trailer fee per Placement Agent Agreement | Zephyr Asset Management Ltd | Period: {period_y}", S['small']))
+    story.append(Paragraph(f"Generated by: {u_name} ({u_role.title()}) | {ts}", S['small']))
+    pdf_doc.build(story, onFirstPage=hf, onLaterPages=hf)
+    buf.seek(0)
+    return StreamingResponse(buf, media_type="application/pdf", headers={"Content-Disposition": f'attachment; filename="TrailerFeeInvoice_{inv_num}.pdf"'})
+
+
+# ─── Phase 5 Demo Seed ────────────────────────────────────────────────────────
+async def seed_demo_phase5():
+    """Phase 5 idempotent demo seed. Guard: placement_agents count."""
+    if await db.placement_agents.count_documents({}) > 0:
+        return
+    now = datetime.now(timezone.utc)
+    def dag(n): return now - timedelta(days=n)
+
+    # ── Placement Agents ──────────────────────────────────────────────────────
+    ag1 = {"agent_name": "Island Capital Advisors Ltd", "company_name": "Island Capital Advisors Ltd", "email": "fees@islandcapital.bs", "phone": "+1 242-555-0201", "bank_name": "RBC Royal Bank (Bahamas)", "bank_account_number": "1234567890", "swift_code": "ROYCBSNA", "vat_registered": True, "vat_number": "VAT-BS-20240042", "created_at": dag(90)}
+    ag2 = {"agent_name": "Caribbean Wealth Partners", "company_name": "Caribbean Wealth Partners LLC", "email": "admin@caribwealthpartners.com", "phone": "+1 345-555-0188", "bank_name": "Cayman National Bank", "bank_account_number": "9876543210", "swift_code": "CANACAYK", "vat_registered": False, "vat_number": None, "created_at": dag(80)}
+    ag1_res = await db.placement_agents.insert_one(ag1)
+    ag2_res = await db.placement_agents.insert_one(ag2)
+    ag1_id = str(ag1_res.inserted_id)
+    ag2_id = str(ag2_res.inserted_id)
+
+    # ── Update Phase 4 investors with share class + committed capital ──────────
+    # Lookup by legal_name
+    inv_updates = [
+        ("Cayman Tech Ventures SPV Ltd", {"share_class": "A", "committed_capital": 750000.0, "capital_called": 0.0, "capital_uncalled": 750000.0}),
+        ("Nassau Capital Partners IBC", {"share_class": "A", "committed_capital": 500000.0, "capital_called": 0.0, "capital_uncalled": 500000.0}),
+        ("Marcus Harrington", {"share_class": "B", "committed_capital": 150000.0, "capital_called": 0.0, "capital_uncalled": 150000.0}),
+        ("Yolanda Santos", {"share_class": "B", "committed_capital": 100000.0, "capital_called": 0.0, "capital_uncalled": 100000.0}),
+        ("Meridian Global Holdings Ltd", {"share_class": "C", "committed_capital": 200000.0, "capital_called": 0.0, "capital_uncalled": 200000.0, "placement_agent_id": ag1_id, "deal_associations": []}),
+        ("Olympus Private Capital Ltd", {"share_class": "C", "committed_capital": 0.0, "capital_called": 0.0, "capital_uncalled": 0.0, "placement_agent_id": ag2_id, "deal_associations": []}),
+    ]
+
+    # Also use secondary names for Phase 4 demo investors that might exist
+    alt_names = {
+        "Cayman Tech Ventures SPV Ltd": ["Cayman Tech Ventures SPV Ltd"],
+        "Nassau Capital Partners IBC": ["Nassau Capital Partners IBC", "Nassau Capital Partners"],
+        "Marcus Harrington": ["Marcus Harrington"],
+        "Yolanda Santos": ["Yolanda Santos"],
+        "Meridian Global Holdings Ltd": ["Meridian Global Holdings Ltd", "Meridian Global Holdings"],
+        "Olympus Private Capital Ltd": ["Olympus Private Capital Ltd", "Olympus Private Capital"],
+    }
+
+    inv_ids: dict = {}
+    for primary, fields in inv_updates:
+        names_to_try = alt_names.get(primary, [primary])
+        found = None
+        for name in names_to_try:
+            found = await db.investors.find_one({"$or": [{"legal_name": name}, {"name": name}]})
+            if found:
+                break
+        if found:
+            await db.investors.update_one({"_id": found["_id"]}, {"$set": fields})
+            inv_ids[primary] = str(found["_id"])
+
+    # ── Find CaribPay deal for Class C deal_associations ─────────────────────
+    caribpay_deal = await db.deals.find_one({"$or": [{"company_name": {"$regex": "CaribPay", "$options": "i"}}, {"name": {"$regex": "CaribPay", "$options": "i"}}]})
+    if caribpay_deal and "Meridian Global Holdings Ltd" in inv_ids:
+        deal_id = str(caribpay_deal["_id"])
+        meridian_id = ObjectId(inv_ids["Meridian Global Holdings Ltd"])
+        await db.investors.update_one({"_id": meridian_id}, {"$set": {"deal_associations": [deal_id]}})
+
+    # ── Capital Call 1: Q1 2026 Initial Drawdown ──────────────────────────────
+    # Class A + B, 20%, all received, due 60 days ago
+    cc1_due = dag(60)
+    cc1_li = []
+    for name, cls in [("Cayman Tech Ventures SPV Ltd", "A"), ("Nassau Capital Partners IBC", "A"), ("Marcus Harrington", "B"), ("Yolanda Santos", "B")]:
+        if name in inv_ids:
+            inv = await db.investors.find_one({"_id": ObjectId(inv_ids[name])})
+            committed = inv.get("committed_capital", 0) or 0
+            cc1_li.append({"investor_id": inv_ids[name], "investor_name": name, "share_class": cls, "committed_capital": committed, "call_amount": round(committed * 0.20, 2), "status": "received"})
+    cc1_total = sum(li["call_amount"] for li in cc1_li)
+    cc1_doc = {"call_name": "Q1 2026 — Initial Drawdown", "call_date": dag(75), "due_date": cc1_due, "deal_id": None, "call_type": "fund_level", "target_classes": ["A", "B"], "call_percentage": 20.0, "total_amount": cc1_total, "status": "issued", "line_items": cc1_li, "created_by": "system", "created_at": dag(80)}
+    cc1_res = await db.capital_calls.insert_one(cc1_doc)
+
+    # Update capital_called on investors for Q1 (all received)
+    for li in cc1_li:
+        inv_oid = ObjectId(li["investor_id"])
+        inv = await db.investors.find_one({"_id": inv_oid})
+        if inv:
+            new_called = (inv.get("capital_called", 0) or 0) + li["call_amount"]
+            committed = inv.get("committed_capital", 0) or 0
+            await db.investors.update_one({"_id": inv_oid}, {"$set": {"capital_called": new_called, "capital_uncalled": max(0, committed - new_called)}})
+
+    # ── Capital Call 2: Q2 2026 Harbour House ────────────────────────────────
+    # Class A + B, 25%, due 10 days from now, Yolanda pending, rest received
+    cc2_due = now + timedelta(days=10)
+    cc2_li = []
+    for name, cls in [("Cayman Tech Ventures SPV Ltd", "A"), ("Nassau Capital Partners IBC", "A"), ("Marcus Harrington", "B"), ("Yolanda Santos", "B")]:
+        if name in inv_ids:
+            inv = await db.investors.find_one({"_id": ObjectId(inv_ids[name])})
+            committed = inv.get("committed_capital", 0) or 0
+            status = "pending" if name == "Yolanda Santos" else "received"
+            cc2_li.append({"investor_id": inv_ids[name], "investor_name": name, "share_class": cls, "committed_capital": committed, "call_amount": round(committed * 0.25, 2), "status": status})
+    cc2_total = sum(li["call_amount"] for li in cc2_li)
+    cc2_doc = {"call_name": "Q2 2026 — Harbour House Acquisition", "call_date": dag(5), "due_date": cc2_due, "deal_id": None, "call_type": "fund_level", "target_classes": ["A", "B"], "call_percentage": 25.0, "total_amount": cc2_total, "status": "issued", "line_items": cc2_li, "created_by": "system", "created_at": dag(7)}
+    await db.capital_calls.insert_one(cc2_doc)
+
+    # Update capital_called on investors for Q2 (update all, pending still gets capital_called updated on issue)
+    for li in cc2_li:
+        inv_oid = ObjectId(li["investor_id"])
+        inv = await db.investors.find_one({"_id": inv_oid})
+        if inv:
+            new_called = (inv.get("capital_called", 0) or 0) + li["call_amount"]
+            committed = inv.get("committed_capital", 0) or 0
+            await db.investors.update_one({"_id": inv_oid}, {"$set": {"capital_called": new_called, "capital_uncalled": max(0, committed - new_called)}})
+
+    # ── Trailer Fee Invoice: Island Capital, 2025, Issued ────────────────────
+    meridian_inv = await db.investors.find_one({"_id": ObjectId(inv_ids["Meridian Global Holdings Ltd"])}) if "Meridian Global Holdings Ltd" in inv_ids else None
+    if meridian_inv:
+        committed_m = meridian_inv.get("committed_capital", 200000.0) or 200000.0
+        fee_amount = round(committed_m * 0.0075, 2)
+        tf_doc = {
+            "agent_id": ag1_id, "agent_name": "Island Capital Advisors Ltd",
+            "invoice_number": "TF-2025-001", "period_year": 2025,
+            "period_start": datetime(2025, 1, 1, tzinfo=timezone.utc),
+            "period_end": datetime(2025, 12, 31, tzinfo=timezone.utc),
+            "line_items": [{"investor_id": inv_ids["Meridian Global Holdings Ltd"], "investor_name": "Meridian Global Holdings Ltd", "deal_name": "General Fund", "committed_capital": committed_m, "fee_rate": 0.0075, "fee_amount": fee_amount}],
+            "subtotal": fee_amount, "vat_applicable": True,
+            "vat_amount": round(fee_amount * 0.10, 2),
+            "total_due": round(fee_amount * 1.10, 2),
+            "status": "issued", "issued_date": dag(30),
+            "due_date": dag(30) + timedelta(days=30),
+            "created_by": "system", "created_at": dag(35),
+        }
+        await db.trailer_fee_invoices.insert_one(tf_doc)

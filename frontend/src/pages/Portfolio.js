@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Briefcase, TrendingUp, BarChart3, AlertTriangle,
-  ChevronUp, ChevronDown, ChevronsUpDown, RefreshCw,
+  ChevronUp, ChevronDown, ChevronsUpDown, RefreshCw, Landmark,
 } from 'lucide-react';
 import {
   PieChart, Pie, Cell, Tooltip, Legend,
@@ -200,38 +200,12 @@ export default function Portfolio() {
       </div>
 
       {/* Section 1: KPI Strip */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-        <KPICard
-          title="Total Portfolio Value"
-          value={loading ? '—' : formatUSD(kpis.total_portfolio_value)}
-          icon={TrendingUp}
-          color="brand"
-          testId="kpi-portfolio-value"
-        />
-        <KPICard
-          title="Active Investments"
-          value={loading ? '—' : (kpis.active_investments ?? 0)}
-          icon={Briefcase}
-          color="primary"
-          testId="kpi-active-investments"
-          subtitle="IC Review & Closing"
-        />
-        <KPICard
-          title="Weighted Avg. IRR"
-          value={loading ? '—' : `${kpis.weighted_avg_irr ?? 0}%`}
-          icon={BarChart3}
-          color="success"
-          testId="kpi-weighted-irr"
-          subtitle="By entry valuation"
-        />
-        <KPICard
-          title="Mandate Exception Rate"
-          value={loading ? '—' : `${kpis.mandate_exception_rate ?? 0}%`}
-          icon={AlertTriangle}
-          color={(kpis.mandate_exception_rate || 0) > 30 ? 'danger' : 'warning'}
-          testId="kpi-exception-rate"
-          subtitle="Of total portfolio"
-        />
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4 mb-8">
+        <KPICard title="Total Portfolio Value" value={loading ? '—' : formatUSD(kpis.total_portfolio_value)} icon={TrendingUp} color="brand" testId="kpi-portfolio-value" />
+        <KPICard title="Active Investments" value={loading ? '—' : (kpis.active_investments ?? 0)} icon={Briefcase} color="primary" testId="kpi-active-investments" subtitle="IC Review & Closing" />
+        <KPICard title="Weighted Avg. IRR" value={loading ? '—' : `${kpis.weighted_avg_irr ?? 0}%`} icon={BarChart3} color="success" testId="kpi-weighted-irr" subtitle="By entry valuation" />
+        <KPICard title="Mandate Exception Rate" value={loading ? '—' : `${kpis.mandate_exception_rate ?? 0}%`} icon={AlertTriangle} color={(kpis.mandate_exception_rate || 0) > 30 ? 'danger' : 'warning'} testId="kpi-exception-rate" subtitle="Of total portfolio" />
+        <KPICard title="Total Committed" value={loading ? '—' : formatUSD((charts.capital_by_class || []).reduce((s, c) => s + (c.called || 0) + (c.uncalled || 0), 0))} icon={Landmark} color="primary" testId="kpi-total-committed" subtitle="All share classes" />
       </div>
 
       {/* Section 2: Charts */}
@@ -387,6 +361,37 @@ export default function Portfolio() {
               </ResponsiveContainer>
             </div>
           </div>
+
+          {/* Row 3: Capital Called vs Uncalled by Share Class */}
+          {(charts.capital_by_class || []).some(c => (c.called || 0) + (c.uncalled || 0) > 0) && (
+            <div className="mt-4">
+              <div className="bg-white border border-[#E5E7EB] rounded-sm shadow-sm p-5" data-testid="chart-capital-by-class">
+                <p className="text-xs font-semibold text-[#6B7280] uppercase tracking-wider mb-1">Capital Structure</p>
+                <p className="text-sm font-bold text-[#1F2937] mb-2">Capital Called vs. Uncalled by Share Class</p>
+                <div className="flex items-center gap-4 mb-4">
+                  <span className="flex items-center gap-1.5 text-xs text-gray-500"><span className="inline-block w-2 h-2 rounded-full" style={{ backgroundColor: '#00A8C6' }} /> Called</span>
+                  <span className="flex items-center gap-1.5 text-xs text-gray-500"><span className="inline-block w-2 h-2 rounded-full" style={{ backgroundColor: '#E5E7EB' }} /> Uncalled</span>
+                </div>
+                <ResponsiveContainer width="100%" height={180}>
+                  <BarChart data={charts.capital_by_class || []} margin={{ top: 0, right: 0, left: 10, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#F3F4F6" />
+                    <XAxis dataKey="class_label" tick={{ fontSize: 11, fill: '#6B7280' }} axisLine={false} tickLine={false} />
+                    <YAxis
+                      tick={{ fontSize: 11, fill: '#6B7280' }}
+                      axisLine={false} tickLine={false}
+                      tickFormatter={v => v >= 1000000 ? `$${(v / 1000000).toFixed(1)}M` : v >= 1000 ? `$${(v / 1000).toFixed(0)}K` : `$${v}`}
+                    />
+                    <Tooltip
+                      contentStyle={{ border: '1px solid #E5E7EB', borderRadius: '2px', fontSize: '12px' }}
+                      formatter={(val, name) => [formatUSD(val), name === 'called' ? 'Called' : 'Uncalled']}
+                    />
+                    <Bar dataKey="called" fill="#00A8C6" stackId="a" radius={[0, 0, 0, 0]} name="called" />
+                    <Bar dataKey="uncalled" fill="#E5E7EB" stackId="a" radius={[2, 2, 0, 0]} name="uncalled" />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          )}
         </div>
       )}
 

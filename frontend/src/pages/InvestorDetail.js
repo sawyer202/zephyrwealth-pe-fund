@@ -108,6 +108,10 @@ export default function InvestorDetail() {
   const [deciding, setDeciding] = useState('');
   const [error, setError] = useState('');
   const [decisionSuccess, setDecisionSuccess] = useState('');
+  const [agents, setAgents] = useState([]);
+  const [allDeals, setAllDeals] = useState([]);
+  const [fpForm, setFpForm] = useState({ share_class: 'A', committed_capital: '', placement_agent_id: '', deal_associations: [] });
+  const [fpSaving, setFpSaving] = useState(false);
 
   const handleExportKYCPDF = async () => {
     try {
@@ -151,6 +155,54 @@ export default function InvestorDetail() {
   }, [id]);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
+
+  // Sync fpForm when investor loads
+  useEffect(() => {
+    if (investor && canDecide) {
+      setFpForm({
+        share_class: investor.share_class || 'A',
+        committed_capital: investor.committed_capital !== undefined ? String(investor.committed_capital) : '',
+        placement_agent_id: investor.placement_agent_id || '',
+        deal_associations: investor.deal_associations || [],
+      });
+    }
+  }, [investor, canDecide]);
+
+  // Fetch agents + deals for Fund Participation section
+  useEffect(() => {
+    if (!canDecide) return;
+    Promise.all([
+      fetch(`${API}/api/agents`, { credentials: 'include' }).then(r => r.ok ? r.json() : []),
+      fetch(`${API}/api/deals`, { credentials: 'include' }).then(r => r.ok ? r.json() : []),
+    ]).then(([ag, dl]) => {
+      setAgents(Array.isArray(ag) ? ag : []);
+      setAllDeals(Array.isArray(dl) ? dl : []);
+    }).catch(() => {});
+  }, [canDecide]);
+
+  const handleSaveFundParticipation = async () => {
+    setFpSaving(true);
+    try {
+      const body = {
+        share_class: fpForm.share_class,
+        committed_capital: parseFloat(fpForm.committed_capital) || 0,
+        placement_agent_id: fpForm.placement_agent_id || null,
+        deal_associations: fpForm.deal_associations,
+      };
+      const res = await fetch(`${API}/api/investors/${id}/fund-participation`, {
+        method: 'PATCH', credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) throw new Error((await res.json()).detail || 'Save failed');
+      setDecisionSuccess('Fund participation saved successfully');
+      fetchAll();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setFpSaving(false);
+    }
+  };
 
   const handleGenerateScorecard = async () => {
     setGenerating(true);
@@ -519,6 +571,115 @@ export default function InvestorDetail() {
           </div>
         )}
       </div>
+
+      {/* Fund Participation — Compliance only */}
+      {canDecide && (
+        <div className="bg-white border border-[#E5E7EB] rounded-sm shadow-sm" data-testid="fund-participation-section">
+          <div className="border-b border-[#E5E7EB] px-5 py-4">
+            <p className="text-xs font-semibold text-[#6B7280] uppercase tracking-wider mb-0.5">Fund Participation</p>
+            <p className="text-sm font-bold text-[#1F2937]">Capital commitment and share class configuration</p>
+          </div>
+          <div className="p-5 space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {/* Share Class */}
+              <div>
+                <label className="block text-xs font-semibold text-[#6B7280] uppercase tracking-wider mb-1">Share Class</label>
+                <select
+                  value={fpForm.share_class}
+                  onChange={e => setFpForm(f => ({ ...f, share_class: e.target.value, placement_agent_id: e.target.value !== 'C' ? '' : f.placement_agent_id, deal_associations: e.target.value !== 'C' ? [] : f.deal_associations }))}
+                  className="w-full px-3 py-2 text-sm border border-[#E5E7EB] rounded-sm bg-white text-[#1F2937] outline-none focus:ring-1 focus:ring-[#00A8C6]"
+                  data-testid="share-class-select"
+                >
+                  <option value="A">Class A — Institutional LP</option>
+                  <option value="B">Class B — HNW Individual</option>
+                  <option value="C">Class C — Placement Agent</option>
+                </select>
+              </div>
+              {/* Committed Capital */}
+              <div>
+                <label className="block text-xs font-semibold text-[#6B7280] uppercase tracking-wider mb-1">Committed Capital (USD)</label>
+                <input
+                  type="number"
+                  min="0"
+                  value={fpForm.committed_capital}
+                  onChange={e => setFpForm(f => ({ ...f, committed_capital: e.target.value }))}
+                  placeholder="e.g. 750000"
+                  className="w-full px-3 py-2 text-sm border border-[#E5E7EB] rounded-sm bg-white text-[#1F2937] outline-none focus:ring-1 focus:ring-[#00A8C6]"
+                  data-testid="committed-capital-input"
+                />
+              </div>
+              {/* Capital Called / Uncalled (read-only) */}
+              <div>
+                <label className="block text-xs font-semibold text-[#6B7280] uppercase tracking-wider mb-1">Capital Called / Uncalled</label>
+                <div className="flex gap-2">
+                  <div className="flex-1 px-3 py-2 text-sm border border-[#F3F4F6] rounded-sm bg-[#FAFAF8] text-[#1F2937] font-mono">
+                    {investor?.capital_called !== undefined ? formatCurrency(investor.capital_called) : '—'}
+                  </div>
+                  <div className="flex-1 px-3 py-2 text-sm border border-[#F3F4F6] rounded-sm bg-[#FAFAF8] text-[#10B981] font-mono">
+                    {investor?.capital_uncalled !== undefined ? formatCurrency(investor.capital_uncalled) : '—'}
+                  </div>
+                </div>
+                <p className="text-xs text-gray-400 mt-0.5">Called / Uncalled — updated on capital calls</p>
+              </div>
+            </div>
+            {/* Class C fields */}
+            {fpForm.share_class === 'C' && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 border-t border-[#E5E7EB] pt-4">
+                <div>
+                  <label className="block text-xs font-semibold text-[#6B7280] uppercase tracking-wider mb-1">Placement Agent</label>
+                  <select
+                    value={fpForm.placement_agent_id}
+                    onChange={e => setFpForm(f => ({ ...f, placement_agent_id: e.target.value }))}
+                    className="w-full px-3 py-2 text-sm border border-[#E5E7EB] rounded-sm bg-white text-[#1F2937] outline-none focus:ring-1 focus:ring-[#00A8C6]"
+                    data-testid="placement-agent-select"
+                  >
+                    <option value="">No placement agent</option>
+                    {agents.map(ag => (
+                      <option key={ag.id} value={ag.id}>{ag.agent_name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-[#6B7280] uppercase tracking-wider mb-1">Deal Associations</label>
+                  <div className="space-y-1 max-h-28 overflow-y-auto border border-[#E5E7EB] rounded-sm p-2">
+                    {allDeals.length === 0 ? (
+                      <p className="text-xs text-gray-400">No deals available</p>
+                    ) : allDeals.map(deal => (
+                      <label key={deal.id} className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={(fpForm.deal_associations || []).includes(deal.id)}
+                          onChange={e => {
+                            const val = deal.id;
+                            setFpForm(f => ({
+                              ...f,
+                              deal_associations: e.target.checked
+                                ? [...(f.deal_associations || []), val]
+                                : (f.deal_associations || []).filter(d => d !== val),
+                            }));
+                          }}
+                          className="w-3.5 h-3.5 accent-[#1B3A6B]"
+                        />
+                        <span className="text-xs text-[#1F2937]">{deal.company_name || deal.name}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+          <div className="border-t border-[#E5E7EB] px-5 py-3 flex items-center justify-end">
+            <button
+              onClick={handleSaveFundParticipation}
+              disabled={fpSaving}
+              data-testid="save-fund-participation-btn"
+              className="px-5 py-2 text-sm font-semibold bg-[#1B3A6B] text-white rounded-sm hover:bg-[#122A50] transition-colors disabled:opacity-50"
+            >
+              {fpSaving ? 'Saving…' : 'Save Fund Participation'}
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Action Buttons */}
       <div className="bg-white border border-[#E5E7EB] rounded-sm shadow-sm p-5">
