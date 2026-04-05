@@ -90,12 +90,14 @@ https://compliance-hub-demo.preview.emergentagent.com
 | `GET /api/investors/{id}/export-pdf` | compliance | KYC Pack PDF |
 | `GET /api/audit-logs` | compliance, manager | Filtered audit logs |
 | `GET /api/reports/tav-pdf` | compliance | TAV Regulatory Report PDF |
+| `GET /api/portfolio/summary` | all | Portfolio KPIs + chart data + holdings |
 
 ---
 
 ## Test Results
 - Phase 3: 36/36 (100%)
 - Phase 4: 39/39 (100%)
+- Phase 5: 34/34 (100%)
 
 ---
 
@@ -105,12 +107,26 @@ https://compliance-hub-demo.preview.emergentagent.com
 - Refactor server.py into modules (auth, deals, investors, reports, pdf_generators) — 1738 lines currently
 - Use shadcn DatePicker instead of native date inputs in Reports filter bar and TAV modal
 
+### Phase 5 — Portfolio Analytics (DONE — 2026-04-05)
+- **Feature 13 — Portfolio Analytics** (`/portfolio`): Accessible to all 3 roles.
+  - Section 1 — KPI Strip: Total Portfolio Value, Active Investments (IC Review + Closing), Weighted Avg IRR (valuation-weighted), Mandate Exception Rate %
+  - Section 2 — 4 Charts: Sector Allocation donut, Geography Allocation donut, IRR Distribution horizontal bar (In Mandate=teal, Exception=amber), Pipeline Stage Value bar
+  - Section 3 — Holdings Table: Sortable columns (click header), row click navigates to `/deals/:id`
+  - Backend: `GET /api/portfolio/summary` — single endpoint returns {kpis, charts, holdings}
+  - Test: 34/34 pass (all 3 roles, all KPIs, all charts, sortable table, row navigation)
+
+---
+
+### P2 (Backlog)
+- Refactor server.py into modules (auth, deals, investors, reports, pdf_generators) — 1948 lines currently
+- Deal creation improvement for Fund Manager role
+- Use shadcn DatePicker instead of native date inputs in Reports filter bar and TAV modal
+
 ### P3 (Backlog)
 - Email notifications via SendGrid (investor decisions, stage changes)
 - Cloud document storage (S3/GCS) instead of local filesystem
 - Bulk investor import via CSV upload
 - Two-factor authentication
-- Portfolio Analytics page (`/portfolio`) with performance charts
 - Deal mandate exception approval workflow (Risk Officer override with IC sign-off)
 - Advanced search/filter on Investors and Deals pages
 
