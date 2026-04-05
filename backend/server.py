@@ -1,9 +1,9 @@
 from dotenv import load_dotenv
 load_dotenv()
 
-from fastapi import FastAPI, HTTPException, Request, Response, Depends, UploadFile, File, Form
+from fastapi import FastAPI, HTTPException, Request, Response, Depends, UploadFile, File, Form, Query
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from motor.motor_asyncio import AsyncIOMotorClient
 from datetime import datetime, timezone, timedelta
 from typing import Optional, List
@@ -18,6 +18,13 @@ import json
 from pathlib import Path
 from bson import ObjectId
 from emergentintegrations.llm.chat import LlmChat, UserMessage
+from io import BytesIO
+from functools import partial as _partial
+from reportlab.lib.pagesizes import A4
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable, PageBreak
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib import colors as rl_colors
+from reportlab.lib.units import mm
 
 app = FastAPI(title="ZephyrWealth API", version="3.0.0")
 
@@ -66,6 +73,7 @@ SCORECARD_SYSTEM_PROMPT = """You are a KYC/AML Compliance Analyst for a licensed
 }"""
 
 OLD_DEAL_STAGE_MAP = {"term_sheet": "ic_review", "due_diligence": "due_diligence", "prospecting": "leads", "closed": "closing"}
+STAGE_LABELS = {"leads": "Leads", "due_diligence": "Due Diligence", "ic_review": "IC Review", "closing": "Closing"}
 
 # ─── Password Helpers ────────────────────────────────────────────────────────
 def hash_password(p: str) -> str:
@@ -327,7 +335,78 @@ ZephyrWealth.ai | Investment Condominium Act 2014 | Investment Funds Act 2020
 ================================================================================
 """
 
-# ─── Seeding ─────────────────────────────────────────────────────────────────
+# ─── PDF Helpers ─────────────────────────────────────────────────────────────
+def _hf_callback(canvas, doc, *, title_line2, user_name, user_role, ts):
+    """Draw branded header and footer on every page."""
+    page_w, page_h = A4
+    canvas.saveState()
+    canvas.setFillColor(rl_colors.HexColor('#1B3A6B'))
+    canvas.rect(0, page_h - 28*mm, page_w, 28*mm, fill=True, stroke=False)
+    canvas.setFillColor(rl_colors.white)
+    canvas.setFont('Helvetica-Bold', 13)
+    canvas.drawString(15*mm, page_h - 11*mm, 'ZephyrWealth.ai')
+    canvas.setFillColor(rl_colors.HexColor('#00A8C6'))
+    canvas.setFont('Helvetica', 8)
+    canvas.drawString(15*mm, page_h - 19*mm, 'Private Equity Back-Office Platform')
+    canvas.setFillColor(rl_colors.HexColor('#C9A84C'))
+    canvas.setFont('Helvetica-Bold', 8)
+    canvas.drawRightString(page_w - 15*mm, page_h - 11*mm, title_line2)
+    canvas.setFillColor(rl_colors.HexColor('#9CA3AF'))
+    canvas.setFont('Helvetica', 7)
+    canvas.drawRightString(page_w - 15*mm, page_h - 19*mm, f'Generated: {ts}')
+    canvas.setFillColor(rl_colors.HexColor('#F8F9FA'))
+    canvas.rect(0, 0, page_w, 15*mm, fill=True, stroke=False)
+    canvas.setStrokeColor(rl_colors.HexColor('#E5E7EB'))
+    canvas.line(0, 15*mm, page_w, 15*mm)
+    canvas.setFillColor(rl_colors.HexColor('#6B7280'))
+    canvas.setFont('Helvetica', 7)
+    canvas.drawString(15*mm, 6*mm, f'Prepared by ZephyrWealth.ai  |  Confidential — For Regulatory Submission Only  |  {user_name} ({user_role})')
+    canvas.drawRightString(page_w - 15*mm, 6*mm, f'Page {doc.page}')
+    canvas.restoreState()
+
+def _pdf_styles():
+    ss = getSampleStyleSheet()
+    return {
+        'h1': ParagraphStyle('zwh1', parent=ss['Normal'], fontSize=18, textColor=rl_colors.HexColor('#1B3A6B'), fontName='Helvetica-Bold', spaceAfter=4),
+        'h2': ParagraphStyle('zwh2', parent=ss['Normal'], fontSize=12, textColor=rl_colors.HexColor('#1B3A6B'), fontName='Helvetica-Bold', spaceAfter=3, spaceBefore=8),
+        'h3': ParagraphStyle('zwh3', parent=ss['Normal'], fontSize=10, textColor=rl_colors.HexColor('#374151'), fontName='Helvetica-Bold', spaceAfter=2, spaceBefore=4),
+        'body': ParagraphStyle('zwbody', parent=ss['Normal'], fontSize=9, textColor=rl_colors.HexColor('#374151'), fontName='Helvetica', spaceAfter=2),
+        'small': ParagraphStyle('zwsmall', parent=ss['Normal'], fontSize=7.5, textColor=rl_colors.HexColor('#6B7280'), fontName='Helvetica', spaceAfter=1),
+        'center': ParagraphStyle('zwcenter', parent=ss['Normal'], fontSize=9, alignment=1, textColor=rl_colors.HexColor('#374151'), fontName='Helvetica'),
+        'cover_title': ParagraphStyle('zwcvt', parent=ss['Normal'], fontSize=26, textColor=rl_colors.HexColor('#1B3A6B'), alignment=1, fontName='Helvetica-Bold', spaceAfter=6),
+        'cover_sub': ParagraphStyle('zwcvs', parent=ss['Normal'], fontSize=13, textColor=rl_colors.HexColor('#00A8C6'), alignment=1, fontName='Helvetica', spaceAfter=4),
+        'cover_body': ParagraphStyle('zwcvb', parent=ss['Normal'], fontSize=10, textColor=rl_colors.HexColor('#6B7280'), alignment=1, fontName='Helvetica', spaceAfter=3),
+    }
+
+def _tbl_style():
+    return TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), rl_colors.HexColor('#1B3A6B')),
+        ('TEXTCOLOR', (0, 0), (-1, 0), rl_colors.white),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, 0), 8),
+        ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+        ('FONTSIZE', (0, 1), (-1, -1), 8),
+        ('TEXTCOLOR', (0, 1), (-1, -1), rl_colors.HexColor('#374151')),
+        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [rl_colors.white, rl_colors.HexColor('#F8F9FA')]),
+        ('GRID', (0, 0), (-1, -1), 0.5, rl_colors.HexColor('#E5E7EB')),
+        ('TOPPADDING', (0, 0), (-1, -1), 5),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+        ('LEFTPADDING', (0, 0), (-1, -1), 6),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 6),
+    ])
+
+_PDF_HC = {
+    'Low': '#10B981', 'High': '#EF4444', 'Medium': '#F59E0B',
+    'Aligned': '#10B981', 'Misaligned': '#EF4444',
+    'Complete': '#10B981', 'Partial': '#F59E0B', 'Missing': '#EF4444',
+    'In Mandate': '#10B981', 'Exception': '#EF4444', 'Exception Cleared': '#F59E0B',
+    'Recommend Approve': '#10B981', 'Review': '#F59E0B', 'Block': '#EF4444',
+    'Approve': '#10B981', 'Reject': '#EF4444', 'Review_rec': '#F59E0B',
+}
+
+
 SEED_USERS = [
     {"email": "compliance@zephyrwealth.ai", "password": "Comply1234!", "role": "compliance", "name": "Sarah Chen", "title": "Chief Compliance Officer"},
     {"email": "risk@zephyrwealth.ai", "password": "Risk1234!", "role": "risk", "name": "Marcus Webb", "title": "Head of Risk"},
@@ -407,7 +486,259 @@ async def seed_demo_data():
         d3_id = ObjectId()
         await db.deals.insert_one({"_id": d3_id, "company_name": "Nassau Microfinance Co.", "name": "Nassau Microfinance Co.", "sector": "Financial Services", "geography": "Caribbean", "asset_class": "Private Equity", "expected_irr": 22.0, "entry_valuation": 3500000, "entity_type": "IBC", "mandate_status": "In Mandate", "pipeline_stage": "leads", "stage": "leads", "stamp_duty_estimate": 17500, "status": "active", "type": "Financial Services", "risk_rating": "low", "scorecard_completed": False, "deal_size": 3500000, "target_return": "22%", "submitted_date": datetime(2025, 2, 15, tzinfo=timezone.utc), "created_at": datetime.now(timezone.utc), "created_by": None})
 
-# ─── Startup ─────────────────────────────────────────────────────────────────
+
+async def seed_demo_phase4():
+    """Feature 12 — idempotent demo seed. Guard: fund_profile fund_name."""
+    if await db.fund_profile.find_one({"fund_name": "Zephyr Caribbean Growth Fund I"}):
+        return
+
+    now = datetime.now(timezone.utc)
+    def dag(n): return now - timedelta(days=n)
+
+    # ── Fund Profile ──────────────────────────────────────────────────────────
+    await db.fund_profile.insert_one({
+        "fund_name": "Zephyr Caribbean Growth Fund I",
+        "license_number": "SCB-2024-PE-0042",
+        "fund_manager": "Zephyr Asset Management Ltd",
+        "mandate_sectors": ["Technology", "Financial Services"],
+        "mandate_geographies": ["Caribbean", "Africa"],
+        "irr_min": 15.0,
+        "irr_max": 25.0,
+        "created_at": now,
+    })
+
+    # ── Lookup user IDs ───────────────────────────────────────────────────────
+    c_user = await db.users.find_one({"email": "compliance@zephyrwealth.ai"})
+    r_user = await db.users.find_one({"email": "risk@zephyrwealth.ai"})
+    m_user = await db.users.find_one({"email": "manager@zephyrwealth.ai"})
+    c_id = str(c_user["_id"]) if c_user else "system"
+    r_id = str(r_user["_id"]) if r_user else "system"
+    m_id = str(m_user["_id"]) if m_user else "system"
+
+    DOCUMENTS_DIR.mkdir(parents=True, exist_ok=True)
+
+    def mk_doc(entity_id, doc_type, filename):
+        p = DOCUMENTS_DIR / entity_id / doc_type
+        p.mkdir(parents=True, exist_ok=True)
+        fp = p / filename
+        fp.write_bytes(b"[Demo seed placeholder - ZephyrWealth Phase 4]")
+        return {"entity_id": entity_id, "document_type": doc_type, "file_path": str(fp), "file_name": filename, "file_size": 46, "uploaded_at": dag(45)}
+
+    # ── Investors ─────────────────────────────────────────────────────────────
+    inv1_id = ObjectId(); inv1_str = str(inv1_id)
+    await db.investors.insert_one({
+        "_id": inv1_id, "legal_name": "Cayman Tech Ventures SPV Ltd", "name": "Cayman Tech Ventures SPV Ltd",
+        "entity_type": "corporate", "type": "Corporate Entity", "dob": None,
+        "nationality": "Cayman Islands", "residence_country": "Cayman Islands",
+        "email": "admin@caymantech.ky", "phone": "+1 345-555-0192",
+        "address": {"street": "Windward 1, Regatta Office Park", "city": "Grand Cayman", "postal_code": "KY1-9006", "country": "Cayman Islands"},
+        "net_worth": 50000000, "annual_income": 8000000, "source_of_wealth": "Investment",
+        "investment_experience": "5+ years", "classification": "institutional",
+        "ubo_declarations": [{"name": "James Caldwell", "nationality": "United Kingdom", "ownership_percentage": 60.0}, {"name": "Patricia Lau", "nationality": "Canada", "ownership_percentage": 40.0}],
+        "accredited_declaration": True, "risk_rating": "low", "kyc_status": "approved",
+        "scorecard_completed": True, "investment_amount": 5000000,
+        "submitted_date": dag(50), "submitted_at": dag(50), "country": "Cayman Islands", "created_at": dag(50),
+        "reviewed_at": dag(46), "reviewed_by": c_id,
+    })
+    for dt, fn in [("passport", "cert_of_incorporation_cayman_tech.pdf"), ("proof_of_address", "registered_office_cayman.pdf"), ("source_of_wealth_doc", "audited_financials_cayman_tech.pdf")]:
+        await db.documents.insert_one(mk_doc(inv1_str, dt, fn))
+    await db.compliance_scorecards.insert_one({
+        "entity_id": inv1_str, "entity_type": "investor",
+        "scorecard_data": {"sanctions_status": "Clear", "identity_status": "Verified", "document_status": "Complete", "source_of_funds": "Clear", "pep_status": "No", "mandate_status": "In Mandate", "identity_confidence_score": 88, "score_breakdown": {"documents": 27, "source_of_wealth": 22, "sanctions": 23, "nationality_risk": 16}, "risk_rating": "Low", "edd_required": False, "overall_rating": "Low Risk", "recommendation": "Approve", "summary": "Cayman Tech Ventures SPV Ltd is a well-structured Cayman SPV with verified institutional UBOs from low-risk jurisdictions. All KYC documentation is complete and source of wealth through technology investment activities is fully substantiated. Sanctions screening returned no adverse findings."},
+        "recommendation": "Approve", "generated_at": dag(47), "reviewed_by": c_id, "decision": "approve", "decision_at": dag(46),
+    })
+
+    inv2_id = ObjectId(); inv2_str = str(inv2_id)
+    await db.investors.insert_one({
+        "_id": inv2_id, "legal_name": "Nassau Capital Partners IBC", "name": "Nassau Capital Partners IBC",
+        "entity_type": "corporate", "type": "Corporate Entity", "dob": None,
+        "nationality": "Bahamas", "residence_country": "Bahamas",
+        "email": "compliance@nassaucapital.bs", "phone": "+1 242-555-0184",
+        "address": {"street": "Bay Street Financial Centre, Suite 401", "city": "Nassau", "postal_code": "N-1234", "country": "Bahamas"},
+        "net_worth": 25000000, "annual_income": 3500000, "source_of_wealth": "Business",
+        "investment_experience": "5+ years", "classification": "institutional",
+        "ubo_declarations": [{"name": "Reginald Thompson", "nationality": "Bahamas", "ownership_percentage": 100.0}],
+        "accredited_declaration": True, "risk_rating": "low", "kyc_status": "approved",
+        "scorecard_completed": True, "investment_amount": 3000000,
+        "submitted_date": dag(44), "submitted_at": dag(44), "country": "Bahamas", "created_at": dag(44),
+        "reviewed_at": dag(40), "reviewed_by": c_id,
+    })
+    for dt, fn in [("corporate_documents", "nassau_capital_ibc_cert.pdf"), ("proof_of_address", "nassau_registered_office.pdf"), ("source_of_wealth_doc", "nassau_capital_financials_2024.pdf")]:
+        await db.documents.insert_one(mk_doc(inv2_str, dt, fn))
+    await db.compliance_scorecards.insert_one({
+        "entity_id": inv2_str, "entity_type": "investor",
+        "scorecard_data": {"sanctions_status": "Clear", "identity_status": "Verified", "document_status": "Complete", "source_of_funds": "Clear", "pep_status": "No", "mandate_status": "In Mandate", "identity_confidence_score": 84, "score_breakdown": {"documents": 26, "source_of_wealth": 22, "sanctions": 24, "nationality_risk": 12}, "risk_rating": "Low", "edd_required": False, "overall_rating": "Low Risk", "recommendation": "Approve", "summary": "Nassau Capital Partners IBC is a locally-registered Bahamian entity with a single verified beneficial owner and complete KYC documentation. Business income is well-documented and consistent with declared net worth. No adverse sanctions findings."},
+        "recommendation": "Approve", "generated_at": dag(42), "reviewed_by": c_id, "decision": "approve", "decision_at": dag(40),
+    })
+
+    inv3_id = ObjectId(); inv3_str = str(inv3_id)
+    await db.investors.insert_one({
+        "_id": inv3_id, "legal_name": "Marcus Harrington", "name": "Marcus Harrington",
+        "entity_type": "individual", "type": "Individual", "dob": "1978-04-22",
+        "nationality": "Barbados", "residence_country": "Barbados",
+        "email": "m.harrington@privatemail.bb", "phone": "+1 246-555-0177",
+        "address": {"street": "12 Rockley Golf Estate", "city": "Christ Church", "postal_code": "BB15008", "country": "Barbados"},
+        "net_worth": 12000000, "annual_income": 1800000, "source_of_wealth": "Business",
+        "investment_experience": "5+ years", "classification": "individual_accredited",
+        "ubo_declarations": [], "accredited_declaration": True, "risk_rating": "low", "kyc_status": "approved",
+        "scorecard_completed": True, "investment_amount": 1500000,
+        "submitted_date": dag(38), "submitted_at": dag(38), "country": "Barbados", "created_at": dag(38),
+        "reviewed_at": dag(35), "reviewed_by": c_id,
+    })
+    for dt, fn in [("passport", "harrington_passport.pdf"), ("proof_of_address", "harrington_utility_barbados.pdf")]:
+        await db.documents.insert_one(mk_doc(inv3_str, dt, fn))
+    await db.compliance_scorecards.insert_one({
+        "entity_id": inv3_str, "entity_type": "investor",
+        "scorecard_data": {"sanctions_status": "Clear", "identity_status": "Verified", "document_status": "Complete", "source_of_funds": "Clear", "pep_status": "No", "mandate_status": "In Mandate", "identity_confidence_score": 82, "score_breakdown": {"documents": 25, "source_of_wealth": 21, "sanctions": 24, "nationality_risk": 12}, "risk_rating": "Low", "edd_required": False, "overall_rating": "Low Risk", "recommendation": "Approve", "summary": "Marcus Harrington is a Barbadian national with a clean KYC profile and verified business income. Two KYC documents on file are complete for an individual investor. No PEP or sanctions exposure."},
+        "recommendation": "Approve", "generated_at": dag(37), "reviewed_by": c_id, "decision": "approve", "decision_at": dag(35),
+    })
+
+    inv4_id = ObjectId(); inv4_str = str(inv4_id)
+    await db.investors.insert_one({
+        "_id": inv4_id, "legal_name": "Yolanda Santos", "name": "Yolanda Santos",
+        "entity_type": "individual", "type": "Individual", "dob": "1990-11-03",
+        "nationality": "Trinidad and Tobago", "residence_country": "Trinidad and Tobago",
+        "email": "y.santos@tntmail.tt", "phone": "+1 868-555-0165",
+        "address": {"street": "7 Federation Park", "city": "Port of Spain", "postal_code": "TT100100", "country": "Trinidad and Tobago"},
+        "net_worth": 3000000, "annual_income": 420000, "source_of_wealth": "Salary",
+        "investment_experience": "1-3 years", "classification": "individual_accredited",
+        "ubo_declarations": [], "accredited_declaration": True, "risk_rating": "medium", "kyc_status": "pending",
+        "scorecard_completed": False, "investment_amount": 500000,
+        "submitted_date": dag(20), "submitted_at": dag(20), "country": "Trinidad and Tobago", "created_at": dag(20),
+    })
+    for dt, fn in [("passport", "santos_passport.pdf")]:
+        await db.documents.insert_one(mk_doc(inv4_str, dt, fn))
+
+    inv5_id = ObjectId(); inv5_str = str(inv5_id)
+    await db.investors.insert_one({
+        "_id": inv5_id, "legal_name": "Meridian Global Holdings Ltd", "name": "Meridian Global Holdings Ltd",
+        "entity_type": "corporate", "type": "Corporate Entity", "dob": None,
+        "nationality": "Panama", "residence_country": "Panama",
+        "email": "admin@meridianglobal.pa", "phone": "+507-555-0144",
+        "address": {"street": "Calle 50, Torres de las Americas", "city": "Panama City", "postal_code": "0810", "country": "Panama"},
+        "net_worth": 15000000, "annual_income": 2200000, "source_of_wealth": "Business",
+        "investment_experience": "5+ years", "classification": "institutional",
+        "ubo_declarations": [{"name": "Viktor Stanev", "nationality": "Bulgaria", "ownership_percentage": 72.0}],
+        "accredited_declaration": False, "risk_rating": "high", "kyc_status": "flagged",
+        "scorecard_completed": True, "investment_amount": 4000000,
+        "submitted_date": dag(30), "submitted_at": dag(30), "country": "Panama", "created_at": dag(30),
+    })
+    for dt, fn in [("passport", "meridian_cert_of_incorporation.pdf"), ("proof_of_address", "meridian_registered_office.pdf")]:
+        await db.documents.insert_one(mk_doc(inv5_str, dt, fn))
+    await db.compliance_scorecards.insert_one({
+        "entity_id": inv5_str, "entity_type": "investor",
+        "scorecard_data": {"sanctions_status": "Pending", "identity_status": "Partial", "document_status": "Partial", "source_of_funds": "Requires Clarification", "pep_status": "Possible", "mandate_status": "Exception", "identity_confidence_score": 42, "score_breakdown": {"documents": 14, "source_of_wealth": 10, "sanctions": 10, "nationality_risk": 8}, "risk_rating": "High", "edd_required": True, "overall_rating": "High Risk", "recommendation": "Review", "summary": "Meridian Global Holdings Ltd presents elevated AML risk. Panama registration with a Bulgarian UBO triggers enhanced due diligence under FTRA 2018. Source of business wealth is insufficiently documented. Potential PEP linkage noted — full sanctions clearance required before proceeding."},
+        "recommendation": "Review", "generated_at": dag(28), "reviewed_by": c_id, "decision": None, "decision_at": None,
+    })
+
+    inv6_id = ObjectId(); inv6_str = str(inv6_id)
+    await db.investors.insert_one({
+        "_id": inv6_id, "legal_name": "Olympus Private Capital Ltd", "name": "Olympus Private Capital Ltd",
+        "entity_type": "corporate", "type": "Corporate Entity", "dob": None,
+        "nationality": "British Virgin Islands", "residence_country": "British Virgin Islands",
+        "email": "contact@olympusprivate.vg", "phone": "+1 284-555-0133",
+        "address": {"street": "Wickhams Cay I", "city": "Road Town", "postal_code": "VG1110", "country": "British Virgin Islands"},
+        "net_worth": 8000000, "annual_income": 1100000, "source_of_wealth": "Business",
+        "investment_experience": "3-5 years", "classification": "institutional",
+        "ubo_declarations": [{"name": "Unknown Beneficial Owner", "nationality": "Unknown", "ownership_percentage": 100.0}],
+        "accredited_declaration": False, "risk_rating": "high", "kyc_status": "rejected",
+        "scorecard_completed": True, "investment_amount": 0,
+        "submitted_date": dag(25), "submitted_at": dag(25), "country": "British Virgin Islands", "created_at": dag(25),
+        "reviewed_at": dag(20), "reviewed_by": c_id,
+    })
+    for dt, fn in [("passport", "olympus_cert_of_incorporation.pdf")]:
+        await db.documents.insert_one(mk_doc(inv6_str, dt, fn))
+    await db.compliance_scorecards.insert_one({
+        "entity_id": inv6_str, "entity_type": "investor",
+        "scorecard_data": {"sanctions_status": "Flagged", "identity_status": "Unverified", "document_status": "Partial", "source_of_funds": "Unexplained", "pep_status": "Confirmed", "mandate_status": "Blocked", "identity_confidence_score": 18, "score_breakdown": {"documents": 6, "source_of_wealth": 3, "sanctions": 4, "nationality_risk": 5}, "risk_rating": "High", "edd_required": True, "overall_rating": "High Risk", "recommendation": "Reject", "summary": "Olympus Private Capital Ltd fails the KYC/AML compliance threshold. UBO identity cannot be verified; BVI registration with undisclosed beneficial ownership. Sanctions flag raised. Source of wealth is entirely unexplained. Decision: Reject."},
+        "recommendation": "Reject", "generated_at": dag(22), "reviewed_by": c_id, "decision": "reject", "decision_at": dag(20),
+    })
+
+    # ── Deals ─────────────────────────────────────────────────────────────────
+    dd1_id = ObjectId(); dd1_str = str(dd1_id)
+    await db.deals.insert_one({
+        "_id": dd1_id, "company_name": "CaribPay Solutions Ltd", "name": "CaribPay Solutions Ltd",
+        "sector": "Technology", "geography": "Caribbean", "asset_class": "Private Equity",
+        "expected_irr": 19.0, "entry_valuation": 4200000, "entity_type": "IBC",
+        "mandate_status": "In Mandate", "pipeline_stage": "closing", "stage": "closing",
+        "stamp_duty_estimate": 21000, "status": "active", "type": "Technology", "risk_rating": "low",
+        "scorecard_completed": True, "deal_size": 4200000, "target_return": "19%",
+        "submitted_date": dag(55), "created_at": dag(55), "created_by": c_id,
+    })
+    for dt, fn in [("financials", "caribpay_financials_2024.pdf"), ("cap_table", "caribpay_cap_table.pdf"), ("im", "caribpay_information_memorandum.pdf")]:
+        await db.documents.insert_one(mk_doc(dd1_str, dt, fn))
+
+    dd2_id = ObjectId(); dd2_str = str(dd2_id)
+    await db.deals.insert_one({
+        "_id": dd2_id, "company_name": "AgroHub Africa Ltd", "name": "AgroHub Africa Ltd",
+        "sector": "Technology", "geography": "Africa", "asset_class": "Private Equity",
+        "expected_irr": 22.0, "entry_valuation": 2800000, "entity_type": "IBC",
+        "mandate_status": "In Mandate", "pipeline_stage": "ic_review", "stage": "ic_review",
+        "stamp_duty_estimate": 14000, "status": "active", "type": "Technology", "risk_rating": "low",
+        "scorecard_completed": True, "deal_size": 2800000, "target_return": "22%",
+        "submitted_date": dag(45), "created_at": dag(45), "created_by": c_id,
+    })
+    for dt, fn in [("financials", "agrohub_financials.pdf"), ("cap_table", "agrohub_cap_table.pdf")]:
+        await db.documents.insert_one(mk_doc(dd2_str, dt, fn))
+
+    dd3_id = ObjectId(); dd3_str = str(dd3_id)
+    await db.deals.insert_one({
+        "_id": dd3_id, "company_name": "InsureSync Caribbean ICON", "name": "InsureSync Caribbean ICON",
+        "sector": "Insurance", "geography": "Caribbean", "asset_class": "Venture",
+        "expected_irr": 17.0, "entry_valuation": 3100000, "entity_type": "ICON",
+        "mandate_status": "Exception", "pipeline_stage": "ic_review", "stage": "ic_review",
+        "stamp_duty_estimate": 15500, "status": "active", "type": "Insurance", "risk_rating": "medium",
+        "scorecard_completed": False, "deal_size": 3100000, "target_return": "17%",
+        "submitted_date": dag(35), "created_at": dag(35), "created_by": c_id,
+        "mandate_override_note": "IC approved sector exception — insurance SaaS classified as Financial Services adjacent. Risk Officer override applied.",
+    })
+    for dt, fn in [("financials", "insuresync_financials.pdf")]:
+        await db.documents.insert_one(mk_doc(dd3_str, dt, fn))
+
+    dd4_id = ObjectId(); dd4_str = str(dd4_id)
+    await db.deals.insert_one({
+        "_id": dd4_id, "company_name": "SaaSAfrica BV", "name": "SaaSAfrica BV",
+        "sector": "Technology", "geography": "Africa", "asset_class": "Venture",
+        "expected_irr": 24.0, "entry_valuation": 1500000, "entity_type": "IBC",
+        "mandate_status": "In Mandate", "pipeline_stage": "due_diligence", "stage": "due_diligence",
+        "stamp_duty_estimate": 7500, "status": "active", "type": "Technology", "risk_rating": "low",
+        "scorecard_completed": False, "deal_size": 1500000, "target_return": "24%",
+        "submitted_date": dag(25), "created_at": dag(25), "created_by": c_id,
+    })
+    for dt, fn in [("financials", "saasafrica_pitch_deck.pdf")]:
+        await db.documents.insert_one(mk_doc(dd4_str, dt, fn))
+
+    dd5_id = ObjectId(); dd5_str = str(dd5_id)
+    await db.deals.insert_one({
+        "_id": dd5_id, "company_name": "CariLogix Ltd", "name": "CariLogix Ltd",
+        "sector": "Financial Services", "geography": "Caribbean", "asset_class": "Private Equity",
+        "expected_irr": 12.0, "entry_valuation": 900000, "entity_type": "ICON",
+        "mandate_status": "Exception", "pipeline_stage": "leads", "stage": "leads",
+        "stamp_duty_estimate": 4500, "status": "active", "type": "Financial Services", "risk_rating": "medium",
+        "scorecard_completed": False, "deal_size": 900000, "target_return": "12%",
+        "submitted_date": dag(10), "created_at": dag(10), "created_by": c_id,
+    })
+
+    # ── Audit Log Entries (15 entries, last 60 days) ──────────────────────────
+    await db.audit_logs.insert_many([
+        {"user_id": c_id, "user_email": "compliance@zephyrwealth.ai", "user_role": "compliance", "user_name": "Sarah Chen", "action": "login", "target_id": None, "target_type": "auth", "timestamp": dag(60), "notes": "Login from 10.0.0.1"},
+        {"user_id": r_id, "user_email": "risk@zephyrwealth.ai", "user_role": "risk", "user_name": "Marcus Webb", "action": "login", "target_id": None, "target_type": "auth", "timestamp": dag(58), "notes": "Login from 10.0.0.2"},
+        {"user_id": m_id, "user_email": "manager@zephyrwealth.ai", "user_role": "manager", "user_name": "Jonathan Morrow", "action": "login", "target_id": None, "target_type": "auth", "timestamp": dag(56), "notes": "Login from 10.0.0.3"},
+        {"user_id": c_id, "user_email": "compliance@zephyrwealth.ai", "user_role": "compliance", "user_name": "Sarah Chen", "action": "investor_created", "target_id": inv1_str, "target_type": "investor", "timestamp": dag(50), "notes": "New investor: Cayman Tech Ventures SPV Ltd"},
+        {"user_id": c_id, "user_email": "compliance@zephyrwealth.ai", "user_role": "compliance", "user_name": "Sarah Chen", "action": "investor_approved", "target_id": inv1_str, "target_type": "investor", "timestamp": dag(46), "notes": "Decision: approve for Cayman Tech Ventures SPV Ltd"},
+        {"user_id": c_id, "user_email": "compliance@zephyrwealth.ai", "user_role": "compliance", "user_name": "Sarah Chen", "action": "investor_created", "target_id": inv2_str, "target_type": "investor", "timestamp": dag(44), "notes": "New investor: Nassau Capital Partners IBC"},
+        {"user_id": c_id, "user_email": "compliance@zephyrwealth.ai", "user_role": "compliance", "user_name": "Sarah Chen", "action": "deal_created", "target_id": dd1_str, "target_type": "deal", "timestamp": dag(42), "notes": "New deal: CaribPay Solutions Ltd | In Mandate"},
+        {"user_id": c_id, "user_email": "compliance@zephyrwealth.ai", "user_role": "compliance", "user_name": "Sarah Chen", "action": "investor_approved", "target_id": inv2_str, "target_type": "investor", "timestamp": dag(40), "notes": "Decision: approve for Nassau Capital Partners IBC"},
+        {"user_id": r_id, "user_email": "risk@zephyrwealth.ai", "user_role": "risk", "user_name": "Marcus Webb", "action": "deal_stage_moved", "target_id": dd1_str, "target_type": "deal", "timestamp": dag(35), "notes": "Moved to ic_review"},
+        {"user_id": c_id, "user_email": "compliance@zephyrwealth.ai", "user_role": "compliance", "user_name": "Sarah Chen", "action": "login", "target_id": None, "target_type": "auth", "timestamp": dag(28), "notes": "Login from 10.0.0.1"},
+        {"user_id": c_id, "user_email": "compliance@zephyrwealth.ai", "user_role": "compliance", "user_name": "Sarah Chen", "action": "investor_rejected", "target_id": inv6_str, "target_type": "investor", "timestamp": dag(20), "notes": "Decision: reject for Olympus Private Capital Ltd"},
+        {"user_id": c_id, "user_email": "compliance@zephyrwealth.ai", "user_role": "compliance", "user_name": "Sarah Chen", "action": "deal_stage_moved", "target_id": dd2_str, "target_type": "deal", "timestamp": dag(18), "notes": "Moved to ic_review"},
+        {"user_id": r_id, "user_email": "risk@zephyrwealth.ai", "user_role": "risk", "user_name": "Marcus Webb", "action": "deal_stage_moved", "target_id": dd3_str, "target_type": "deal", "timestamp": dag(12), "notes": "Moved to ic_review | Override: IC approved sector exception — insurance SaaS classified as Financial Services adjacent. Risk Officer override applied."},
+        {"user_id": r_id, "user_email": "risk@zephyrwealth.ai", "user_role": "risk", "user_name": "Marcus Webb", "action": "deal_stage_moved", "target_id": dd1_str, "target_type": "deal", "timestamp": dag(7), "notes": "Moved to closing"},
+        {"user_id": c_id, "user_email": "compliance@zephyrwealth.ai", "user_role": "compliance", "user_name": "Sarah Chen", "action": "deal_executed", "target_id": dd1_str, "target_type": "deal", "timestamp": dag(5), "notes": "Transaction executed: CaribPay Solutions Ltd | IBC"},
+    ])
+
+
 @app.on_event("startup")
 async def startup():
     DOCUMENTS_DIR.mkdir(parents=True, exist_ok=True)
@@ -419,9 +750,10 @@ async def startup():
     await db.deals.create_index("pipeline_stage")
     await seed_users()
     await seed_demo_data()
-    print("ZephyrWealth API v3 ready")
+    await seed_demo_phase4()
+    print("ZephyrWealth API v4 ready")
 
-# ─── Health ──────────────────────────────────────────────────────────────────
+
 @app.get("/api/health")
 async def health():
     return {"status": "ok", "service": "ZephyrWealth API", "version": "3.0.0"}
@@ -840,20 +1172,566 @@ async def execute_deal(deal_id: str, current_user: dict = Depends(get_current_us
         content = generate_subscription_agreement(company_name, entry_val, irr, stamp_duty, now, deal_id)
         filename = f"Subscription_Agreement_{company_name.replace(' ', '_')}.txt"
     await db.deals.update_one({"_id": oid}, {"$set": {"pipeline_stage": "closing", "stage": "closing"}})
-    await db.audit_logs.insert_one({"user_id": current_user.get("_id"), "action": "deal_executed", "target_id": deal_id, "target_type": "deal", "timestamp": now, "notes": f"Transaction executed: {company_name} | {entity_type}"})
+    u_email = current_user.get("email", "")
+    u_role = current_user.get("role", "")
+    u_name = current_user.get("name", "")
+    await db.audit_logs.insert_one({"user_id": current_user.get("_id"), "user_email": u_email, "user_role": u_role, "user_name": u_name, "action": "deal_executed", "target_id": deal_id, "target_type": "deal", "timestamp": now, "notes": f"Transaction executed: {company_name} | {entity_type}"})
     from fastapi.responses import Response
     return Response(content=content.encode("utf-8"), media_type="application/octet-stream", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
 
 # ─── Audit Logs ───────────────────────────────────────────────────────────────
 @app.get("/api/audit-logs")
-async def get_audit_logs(current_user: dict = Depends(get_current_user)):
+async def get_audit_logs(
+    current_user: dict = Depends(get_current_user),
+    action: Optional[str] = Query(None),
+    role: Optional[str] = Query(None),
+    from_date: Optional[str] = Query(None, alias="from"),
+    to_date: Optional[str] = Query(None, alias="to"),
+    page: int = Query(1, ge=1),
+    limit: int = Query(20, ge=1, le=100),
+):
     if current_user["role"] not in ("compliance", "manager"):
         raise HTTPException(status_code=403, detail="Insufficient permissions")
+
+    query: dict = {}
+    if action:
+        query["action"] = action
+    if from_date or to_date:
+        ts_filter: dict = {}
+        if from_date:
+            try:
+                ts_filter["$gte"] = datetime.fromisoformat(from_date).replace(tzinfo=timezone.utc)
+            except Exception:
+                pass
+        if to_date:
+            try:
+                ts_filter["$lte"] = datetime.fromisoformat(to_date).replace(tzinfo=timezone.utc) + timedelta(days=1)
+            except Exception:
+                pass
+        if ts_filter:
+            query["timestamp"] = ts_filter
+
+    if role:
+        role_user_ids = []
+        async for u in db.users.find({"role": role}, {"_id": 1}):
+            role_user_ids.append(str(u["_id"]))
+        if not role_user_ids:
+            return {"logs": [], "total": 0, "page": page, "limit": limit, "total_pages": 0}
+        query["user_id"] = {"$in": role_user_ids}
+
+    total = await db.audit_logs.count_documents(query)
+    total_pages = max(1, (total + limit - 1) // limit)
+    skip = (page - 1) * limit
+
+    # Build user lookup map
+    user_ids_in_page = set()
+    raw_logs = []
+    async for doc in db.audit_logs.find(query).sort("timestamp", -1).skip(skip).limit(limit):
+        if doc.get("user_id"):
+            user_ids_in_page.add(doc["user_id"])
+        raw_logs.append(doc)
+
+    user_map: dict = {}
+    for uid in user_ids_in_page:
+        if uid and uid != "system":
+            try:
+                u = await db.users.find_one({"_id": ObjectId(uid)}, {"_id": 0, "email": 1, "role": 1, "name": 1})
+                if u:
+                    user_map[uid] = u
+            except Exception:
+                pass
+
     logs = []
-    async for doc in db.audit_logs.find().sort("timestamp", -1).limit(100):
+    for doc in raw_logs:
         doc["id"] = str(doc["_id"])
         doc.pop("_id", None)
         if isinstance(doc.get("timestamp"), datetime):
             doc["timestamp"] = doc["timestamp"].isoformat()
+        uid = doc.get("user_id")
+        u_info = user_map.get(uid or "", {})
+        doc["user_email"] = doc.get("user_email") or u_info.get("email", "Unknown")
+        doc["user_role"] = doc.get("user_role") or u_info.get("role", "unknown")
+        doc["user_name"] = doc.get("user_name") or u_info.get("name", "")
         logs.append(doc)
-    return logs
+
+    return {"logs": logs, "total": total, "page": page, "limit": limit, "total_pages": total_pages}
+
+
+# ─── Deal PDF Export (Feature 8) ─────────────────────────────────────────────
+@app.get("/api/deals/{deal_id}/export-pdf")
+async def export_deal_pdf(deal_id: str, current_user: dict = Depends(get_current_user)):
+    if current_user["role"] not in ("compliance", "risk"):
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+    try:
+        oid = ObjectId(deal_id)
+    except Exception:
+        raise HTTPException(400, "Invalid deal ID")
+    deal = await db.deals.find_one({"_id": oid})
+    if not deal:
+        raise HTTPException(404, "Deal not found")
+    deal = normalize_deal(deal)
+
+    mandate = await db.fund_mandate.find_one({})
+    doc_count = await db.documents.count_documents({"entity_id": deal_id})
+
+    irr = float(deal.get("expected_irr") or 0)
+    entry_val = float(deal.get("entry_valuation") or 0)
+    stamp_duty = entry_val * 0.005
+    mandate_status = deal.get("mandate_status", "In Mandate")
+    document_status = "Complete" if doc_count >= 3 else ("Partial" if doc_count >= 1 else "Missing")
+    financial_alignment = "Aligned"
+    if mandate:
+        financial_alignment = "Aligned" if mandate.get("irr_min", 0) <= irr <= mandate.get("irr_max", 100) else "Misaligned"
+    compliance_risk = {"In Mandate": "Low", "Exception Cleared": "Medium", "Exception": "High", "Blocked": "High"}.get(mandate_status, "Medium")
+    if compliance_risk == "Low" and document_status != "Missing" and financial_alignment == "Aligned":
+        overall = "Recommend Approve"
+    elif compliance_risk == "High":
+        overall = "Block"
+    else:
+        overall = "Review"
+
+    ts = datetime.now(timezone.utc).strftime("%d %b %Y, %H:%M UTC")
+    S = _pdf_styles()
+    u_name = current_user.get("name", current_user.get("email", "Unknown"))
+    u_role = current_user["role"].title()
+
+    buf = BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=A4, topMargin=33*mm, bottomMargin=22*mm, leftMargin=15*mm, rightMargin=15*mm)
+    hf = _partial(_hf_callback, title_line2="Investment Committee Pack", user_name=u_name, user_role=u_role, ts=ts)
+
+    story = []
+    story.append(Paragraph(deal.get("company_name", ""), S['h1']))
+    story.append(Paragraph("Investment Committee Pack — Confidential", S['small']))
+    story.append(HRFlowable(width="100%", thickness=1, color=rl_colors.HexColor('#1B3A6B'), spaceAfter=6))
+    story.append(Spacer(1, 4*mm))
+
+    story.append(Paragraph("Deal Overview", S['h2']))
+    deal_tbl = Table([
+        ['Field', 'Value'],
+        ['Company Name', deal.get('company_name', '—')],
+        ['Sector', deal.get('sector', '—')],
+        ['Geography', deal.get('geography', '—')],
+        ['Asset Class', deal.get('asset_class', '—')],
+        ['Entity Type', deal.get('entity_type', '—')],
+        ['Entry Valuation', f"USD {entry_val:,.0f}"],
+        ['Expected IRR', f"{irr}%"],
+        ['Pipeline Stage', STAGE_LABELS.get(deal.get('pipeline_stage', ''), deal.get('pipeline_stage', '—'))],
+        ['Stamp Duty Estimate', f"USD {stamp_duty:,.0f} (0.5% of entry valuation)"],
+    ], colWidths=[55*mm, 115*mm])
+    deal_tbl.setStyle(_tbl_style())
+    story.append(deal_tbl)
+    story.append(Spacer(1, 6*mm))
+
+    story.append(Paragraph("Mandate Check", S['h2']))
+    if mandate:
+        in_sec = deal.get('sector', '') in mandate.get('allowed_sectors', [])
+        in_geo = deal.get('geography', '') in mandate.get('allowed_geographies', [])
+        in_irr = mandate.get('irr_min', 0) <= irr <= mandate.get('irr_max', 100)
+        m_data = [
+            ['Criterion', 'Required', 'Deal Value', 'Result'],
+            ['Sector', ', '.join(mandate.get('allowed_sectors', [])), deal.get('sector', '—'), 'PASS' if in_sec else 'FAIL'],
+            ['Geography', ', '.join(mandate.get('allowed_geographies', [])), deal.get('geography', '—'), 'PASS' if in_geo else 'FAIL'],
+            ['IRR Range', f"{mandate.get('irr_min', 0)}%–{mandate.get('irr_max', 100)}%", f"{irr}%", 'PASS' if in_irr else 'FAIL'],
+        ]
+        m_tbl = Table(m_data, colWidths=[40*mm, 60*mm, 40*mm, 30*mm])
+        ms = _tbl_style()
+        for ri, row in enumerate(m_data[1:], 1):
+            c = rl_colors.HexColor('#10B981') if row[-1] == 'PASS' else rl_colors.HexColor('#EF4444')
+            ms.add('TEXTCOLOR', (3, ri), (3, ri), c)
+            ms.add('FONTNAME', (3, ri), (3, ri), 'Helvetica-Bold')
+        m_tbl.setStyle(ms)
+        story.append(m_tbl)
+    mc = rl_colors.HexColor('#10B981') if mandate_status == 'In Mandate' else rl_colors.HexColor('#EF4444')
+    ms_lbl = f"Overall Mandate Status: {mandate_status}"
+    story.append(Spacer(1, 3*mm))
+    ov_tbl = Table([[ms_lbl]], colWidths=[170*mm])
+    ov_tbl.setStyle(TableStyle([('BACKGROUND', (0, 0), (0, 0), rl_colors.HexColor('#F8F9FA')), ('TEXTCOLOR', (0, 0), (0, 0), mc), ('FONTNAME', (0, 0), (0, 0), 'Helvetica-Bold'), ('FONTSIZE', (0, 0), (0, 0), 10), ('GRID', (0, 0), (-1, -1), 0.5, rl_colors.HexColor('#E5E7EB')), ('TOPPADDING', (0, 0), (-1, -1), 6), ('BOTTOMPADDING', (0, 0), (-1, -1), 6), ('LEFTPADDING', (0, 0), (-1, -1), 8)]))
+    story.append(ov_tbl)
+    story.append(Spacer(1, 6*mm))
+
+    story.append(Paragraph("Deal Health Score", S['h2']))
+    h_data = [
+        ['Indicator', 'Assessment'],
+        ['Compliance Risk', compliance_risk],
+        ['Financial Alignment', financial_alignment],
+        ['Document Status', document_status],
+        ['Mandate Status', mandate_status],
+        ['Documents on File', str(doc_count)],
+        ['Overall Assessment', overall],
+    ]
+    h_tbl = Table(h_data, colWidths=[70*mm, 100*mm])
+    hs = _tbl_style()
+    for ri, row in enumerate(h_data[1:], 1):
+        col_hex = _PDF_HC.get(row[1])
+        if col_hex:
+            hs.add('TEXTCOLOR', (1, ri), (1, ri), rl_colors.HexColor(col_hex))
+            hs.add('FONTNAME', (1, ri), (1, ri), 'Helvetica-Bold')
+    h_tbl.setStyle(hs)
+    story.append(h_tbl)
+    story.append(Spacer(1, 6*mm))
+
+    if deal.get("mandate_override_note"):
+        story.append(Paragraph("Risk Officer Override Note", S['h3']))
+        story.append(Paragraph(deal["mandate_override_note"], S['body']))
+        story.append(Spacer(1, 4*mm))
+
+    story.append(HRFlowable(width="100%", thickness=0.5, color=rl_colors.HexColor('#E5E7EB'), spaceAfter=3))
+    story.append(Paragraph("Rule-based assessment — human review required — ZephyrWealth Compliance Framework", S['small']))
+    story.append(Paragraph(f"Report generated: {ts}  |  Prepared by: {u_name} ({u_role})", S['small']))
+
+    doc.build(story, onFirstPage=hf, onLaterPages=hf)
+    buf.seek(0)
+    safe = deal.get('company_name', 'Deal').replace(' ', '_')
+    return StreamingResponse(buf, media_type="application/pdf", headers={"Content-Disposition": f'attachment; filename="IC_Pack_{safe}.pdf"'})
+
+
+# ─── Investor KYC PDF Export (Feature 9) ─────────────────────────────────────
+@app.get("/api/investors/{investor_id}/export-pdf")
+async def export_investor_pdf(investor_id: str, current_user: dict = Depends(get_current_user)):
+    if current_user["role"] != "compliance":
+        raise HTTPException(status_code=403, detail="Compliance role required")
+    try:
+        oid = ObjectId(investor_id)
+    except Exception:
+        raise HTTPException(400, "Invalid investor ID")
+    investor = await db.investors.find_one({"_id": oid})
+    if not investor:
+        raise HTTPException(404, "Investor not found")
+    investor["id"] = str(investor["_id"])
+    investor.pop("_id", None)
+
+    docs = []
+    async for d in db.documents.find({"entity_id": investor_id}):
+        d["id"] = str(d["_id"])
+        d.pop("_id", None)
+        docs.append(d)
+
+    sc_doc = await db.compliance_scorecards.find_one({"entity_id": investor_id})
+    sc = sc_doc.get("scorecard_data") if sc_doc else None
+
+    ts = datetime.now(timezone.utc).strftime("%d %b %Y, %H:%M UTC")
+    S = _pdf_styles()
+    u_name = current_user.get("name", current_user.get("email", "Unknown"))
+    u_role = current_user["role"].title()
+
+    buf = BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=A4, topMargin=33*mm, bottomMargin=22*mm, leftMargin=15*mm, rightMargin=15*mm)
+    hf = _partial(_hf_callback, title_line2="KYC Compliance Pack", user_name=u_name, user_role=u_role, ts=ts)
+
+    story = []
+    inv_name = investor.get("legal_name") or investor.get("name", "Unknown")
+    story.append(Paragraph(inv_name, S['h1']))
+    story.append(Paragraph("KYC Compliance Pack — Confidential", S['small']))
+    story.append(HRFlowable(width="100%", thickness=1, color=rl_colors.HexColor('#1B3A6B'), spaceAfter=6))
+    story.append(Spacer(1, 4*mm))
+
+    story.append(Paragraph("Investor Profile", S['h2']))
+    kyc_status = investor.get("kyc_status", "pending")
+    sc_tbl = Table([
+        ['Field', 'Value'],
+        ['Legal Name', inv_name],
+        ['Entity Type', investor.get('entity_type', '—').title()],
+        ['Nationality', investor.get('nationality', '—')],
+        ['Residence', investor.get('residence_country') or investor.get('country', '—')],
+        ['KYC Status', kyc_status.upper()],
+        ['Risk Rating', (investor.get('risk_rating') or '—').upper()],
+        ['Classification', investor.get('classification', '—')],
+        ['Investment Amount', f"USD {investor.get('investment_amount', 0):,}" if investor.get('investment_amount') else '—'],
+    ], colWidths=[55*mm, 115*mm])
+    sc_tbl.setStyle(_tbl_style())
+    story.append(sc_tbl)
+    story.append(Spacer(1, 6*mm))
+
+    story.append(Paragraph(f"KYC Document Checklist ({len(docs)} document{'s' if len(docs) != 1 else ''} on file)", S['h2']))
+    DOC_LABELS = {"passport": "Passport / National ID", "proof_of_address": "Proof of Address", "source_of_wealth_doc": "Source of Wealth Declaration", "corporate_documents": "Corporate / Incorporation Documents", "cap_table": "Cap Table", "financials": "Financial Statements"}
+    if docs:
+        d_rows = [['Document Type', 'File Name', 'Upload Date']]
+        for d in docs:
+            d_rows.append([DOC_LABELS.get(d.get('document_type', ''), d.get('document_type', '—')), d.get('file_name', '—'), datetime.fromisoformat(str(d.get('uploaded_at', ''))).strftime('%d %b %Y') if d.get('uploaded_at') else '—'])
+        d_tbl = Table(d_rows, colWidths=[60*mm, 70*mm, 40*mm])
+        d_tbl.setStyle(_tbl_style())
+        story.append(d_tbl)
+    else:
+        story.append(Paragraph("No documents uploaded.", S['body']))
+    story.append(Spacer(1, 6*mm))
+
+    story.append(Paragraph("AI Compliance Scorecard", S['h2']))
+    if sc:
+        score = sc.get('identity_confidence_score', 0)
+        score_col = rl_colors.HexColor('#10B981') if score >= 70 else (rl_colors.HexColor('#F59E0B') if score >= 40 else rl_colors.HexColor('#EF4444'))
+        sc_rows = [
+            ['Indicator', 'Status'],
+            ['Sanctions Status', sc.get('sanctions_status', '—')],
+            ['Identity / UBO', sc.get('identity_status', '—')],
+            ['Document Status', sc.get('document_status', '—')],
+            ['Source of Funds', sc.get('source_of_funds', '—')],
+            ['PEP Status', sc.get('pep_status', '—')],
+            ['Fund Mandate', sc.get('mandate_status', '—')],
+        ]
+        sc_tbl2 = Table(sc_rows, colWidths=[70*mm, 100*mm])
+        ss2 = _tbl_style()
+        for ri, row in enumerate(sc_rows[1:], 1):
+            col_hex = _PDF_HC.get(row[1])
+            if col_hex:
+                ss2.add('TEXTCOLOR', (1, ri), (1, ri), rl_colors.HexColor(col_hex))
+                ss2.add('FONTNAME', (1, ri), (1, ri), 'Helvetica-Bold')
+        sc_tbl2.setStyle(ss2)
+        story.append(sc_tbl2)
+        story.append(Spacer(1, 3*mm))
+
+        rec = sc.get('recommendation', '—')
+        rec_col = rl_colors.HexColor(_PDF_HC.get(rec, '#374151'))
+        rec_tbl = Table([[f"Recommendation: {rec}  |  Score: {score}/100  |  {sc.get('overall_rating', '')}  |  EDD: {'YES' if sc.get('edd_required') else 'NO'}"]], colWidths=[170*mm])
+        rec_tbl.setStyle(TableStyle([('BACKGROUND', (0, 0), (0, 0), rl_colors.HexColor('#252523')), ('TEXTCOLOR', (0, 0), (0, 0), rec_col), ('FONTNAME', (0, 0), (0, 0), 'Helvetica-Bold'), ('FONTSIZE', (0, 0), (0, 0), 9), ('TOPPADDING', (0, 0), (-1, -1), 7), ('BOTTOMPADDING', (0, 0), (-1, -1), 7), ('LEFTPADDING', (0, 0), (-1, -1), 8)]))
+        story.append(rec_tbl)
+        story.append(Spacer(1, 3*mm))
+        if sc.get('summary'):
+            story.append(Paragraph("Analysis Summary", S['h3']))
+            story.append(Paragraph(sc['summary'], S['body']))
+    else:
+        story.append(Paragraph("No AI Compliance Scorecard has been generated for this investor.", S['body']))
+    story.append(Spacer(1, 6*mm))
+
+    story.append(Paragraph("Approval / Decision History", S['h2']))
+    dec_rows = [['Date', 'Action', 'Officer']]
+    if sc_doc and sc_doc.get("decision"):
+        dec_date = sc_doc.get("decision_at")
+        dec_str = datetime.fromisoformat(str(dec_date)).strftime('%d %b %Y') if dec_date else '—'
+        dec_rows.append([dec_str, sc_doc["decision"].title(), u_name])
+    if investor.get("reviewed_at"):
+        r_date = datetime.fromisoformat(str(investor["reviewed_at"])).strftime('%d %b %Y')
+        dec_rows.append([r_date, f"KYC Status set to {kyc_status.title()}", u_name])
+    if len(dec_rows) == 1:
+        dec_rows.append(['—', 'No decisions recorded', '—'])
+    dec_tbl = Table(dec_rows, colWidths=[40*mm, 90*mm, 40*mm])
+    dec_tbl.setStyle(_tbl_style())
+    story.append(dec_tbl)
+
+    story.append(Spacer(1, 8*mm))
+    story.append(HRFlowable(width="100%", thickness=0.5, color=rl_colors.HexColor('#E5E7EB'), spaceAfter=3))
+    story.append(Paragraph(f"Report generated: {ts}  |  Prepared by: {u_name} ({u_role})", S['small']))
+
+    doc.build(story, onFirstPage=hf, onLaterPages=hf)
+    buf.seek(0)
+    safe = inv_name.replace(' ', '_')
+    return StreamingResponse(buf, media_type="application/pdf", headers={"Content-Disposition": f'attachment; filename="KYC_Pack_{safe}.pdf"'})
+
+
+# ─── TAV Regulatory Report PDF (Feature 11) ──────────────────────────────────
+@app.get("/api/reports/tav-pdf")
+async def export_tav_pdf(
+    current_user: dict = Depends(get_current_user),
+    from_date: Optional[str] = Query(None, alias="from"),
+    to_date: Optional[str] = Query(None, alias="to"),
+):
+    if current_user["role"] != "compliance":
+        raise HTTPException(status_code=403, detail="Compliance role required")
+
+    from datetime import date as ddate
+    now_dt = datetime.now(timezone.utc)
+    if from_date and to_date:
+        period_from = from_date
+        period_to = to_date
+    else:
+        m = now_dt.month
+        q = (m - 1) // 3
+        period_from = ddate(now_dt.year, q * 3 + 1, 1).isoformat()
+        qe_month = q * 3 + 3
+        qe_year = now_dt.year
+        import calendar
+        period_to = ddate(qe_year, qe_month, calendar.monthrange(qe_year, qe_month)[1]).isoformat()
+
+    q_num = (datetime.fromisoformat(period_from).month - 1) // 3 + 1
+    q_year = datetime.fromisoformat(period_from).year
+    quarter_label = f"Q{q_num} {q_year}"
+
+    fund_profile = await db.fund_profile.find_one({}) or {}
+    mandate = await db.fund_mandate.find_one({}) or {}
+
+    active_deals = []
+    async for d in db.deals.find({"pipeline_stage": {"$in": ["closing", "ic_review"]}}):
+        d["id"] = str(d["_id"])
+        d.pop("_id", None)
+        active_deals.append(d)
+
+    total_tav = sum(float(d.get("entry_valuation") or 0) for d in active_deals)
+
+    sector_breakdown: dict = {}
+    entity_breakdown: dict = {}
+    for d in active_deals:
+        sec = d.get("sector", "Other")
+        sector_breakdown[sec] = sector_breakdown.get(sec, 0) + float(d.get("entry_valuation") or 0)
+        et = d.get("entity_type", "IBC")
+        entity_breakdown[et] = entity_breakdown.get(et, 0) + float(d.get("entry_valuation") or 0)
+
+    total_inv = await db.investors.count_documents({})
+    approved_inv = await db.investors.count_documents({"kyc_status": "approved"})
+    pending_inv = await db.investors.count_documents({"kyc_status": "pending"})
+    flagged_inv = await db.investors.count_documents({"kyc_status": "flagged"})
+    rejected_inv = await db.investors.count_documents({"kyc_status": "rejected"})
+    ind_inv = await db.investors.count_documents({"entity_type": "individual"})
+    corp_inv = await db.investors.count_documents({"entity_type": "corporate"})
+    total_sc = await db.compliance_scorecards.count_documents({})
+    mandate_exceptions = await db.deals.count_documents({"mandate_status": "Exception"})
+
+    ts = now_dt.strftime("%d %b %Y, %H:%M UTC")
+    S = _pdf_styles()
+    u_name = current_user.get("name", current_user.get("email", "Unknown"))
+    u_role = current_user["role"].title()
+
+    buf = BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=A4, topMargin=33*mm, bottomMargin=22*mm, leftMargin=15*mm, rightMargin=15*mm)
+    hf = _partial(_hf_callback, title_line2=f"TAV Report — {quarter_label}", user_name=u_name, user_role=u_role, ts=ts)
+
+    story = []
+
+    # ── Cover Page ────────────────────────────────────────────────────────────
+    story.append(Spacer(1, 20*mm))
+    story.append(Paragraph(fund_profile.get("fund_name", "Zephyr Caribbean Growth Fund I"), S['cover_title']))
+    story.append(Spacer(1, 5*mm))
+    story.append(HRFlowable(width="80%", thickness=2, color=rl_colors.HexColor('#00A8C6'), spaceAfter=8, hAlign='CENTER'))
+    story.append(Paragraph(f"Total Asset Value Report — {quarter_label}", S['cover_sub']))
+    story.append(Spacer(1, 8*mm))
+    cover_data = [
+        ['Reporting Period', f"{period_from}  to  {period_to}"],
+        ['Generation Date', ts],
+        ['Prepared By', f"{u_name} ({u_role})"],
+        ['Fund License', fund_profile.get("license_number", "SCB-2024-PE-0042")],
+        ['Fund Manager', fund_profile.get("fund_manager", "Zephyr Asset Management Ltd")],
+    ]
+    cv_tbl = Table(cover_data, colWidths=[55*mm, 105*mm])
+    cv_tbl.setStyle(TableStyle([
+        ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'), ('FONTSIZE', (0, 0), (-1, -1), 10),
+        ('TEXTCOLOR', (0, 0), (0, -1), rl_colors.HexColor('#6B7280')),
+        ('TEXTCOLOR', (1, 0), (1, -1), rl_colors.HexColor('#1F2937')),
+        ('ALIGN', (0, 0), (-1, -1), 'LEFT'), ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('GRID', (0, 0), (-1, -1), 0.5, rl_colors.HexColor('#E5E7EB')),
+        ('TOPPADDING', (0, 0), (-1, -1), 8), ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+        ('LEFTPADDING', (0, 0), (-1, -1), 10), ('BACKGROUND', (0, 0), (0, -1), rl_colors.HexColor('#F8F9FA')),
+    ]))
+    story.append(cv_tbl)
+    story.append(Spacer(1, 16*mm))
+    story.append(Paragraph("CONFIDENTIAL — FOR REGULATORY SUBMISSION ONLY", ParagraphStyle('conf', parent=S['small'], alignment=1, textColor=rl_colors.HexColor('#EF4444'), fontName='Helvetica-Bold', fontSize=9)))
+    story.append(PageBreak())
+
+    # ── Section 1: Fund Overview ──────────────────────────────────────────────
+    story.append(Paragraph("Section 1 — Fund Overview", S['h2']))
+    story.append(HRFlowable(width="100%", thickness=0.5, color=rl_colors.HexColor('#E5E7EB'), spaceAfter=4))
+    s1_data = [
+        ['Parameter', 'Details'],
+        ['Fund Name', fund_profile.get("fund_name", "Zephyr Caribbean Growth Fund I")],
+        ['Fund Manager', fund_profile.get("fund_manager", "Zephyr Asset Management Ltd")],
+        ['License Number', fund_profile.get("license_number", "SCB-2024-PE-0042")],
+        ['Allowed Sectors', ', '.join(fund_profile.get("mandate_sectors", mandate.get("allowed_sectors", [])))],
+        ['Allowed Geographies', ', '.join(fund_profile.get("mandate_geographies", mandate.get("allowed_geographies", [])))],
+        ['Target IRR Range', f"{fund_profile.get('irr_min', mandate.get('irr_min', 15))}% – {fund_profile.get('irr_max', mandate.get('irr_max', 25))}%"],
+    ]
+    s1_tbl = Table(s1_data, colWidths=[55*mm, 115*mm])
+    s1_tbl.setStyle(_tbl_style())
+    story.append(s1_tbl)
+    story.append(Spacer(1, 8*mm))
+
+    # ── Section 2: Portfolio Summary Table ───────────────────────────────────
+    story.append(Paragraph("Section 2 — Portfolio Summary (Active Deals)", S['h2']))
+    story.append(HRFlowable(width="100%", thickness=0.5, color=rl_colors.HexColor('#E5E7EB'), spaceAfter=4))
+    if active_deals:
+        p2_rows = [['Company', 'Sector', 'Geography', 'Type', 'Valuation (USD)', 'IRR%', 'Mandate']]
+        for d in active_deals:
+            p2_rows.append([
+                d.get('company_name', '—'), d.get('sector', '—'), d.get('geography', '—'),
+                d.get('entity_type', '—'), f"${float(d.get('entry_valuation') or 0):,.0f}",
+                f"{d.get('expected_irr', 0)}%", d.get('mandate_status', '—'),
+            ])
+        p2_tbl = Table(p2_rows, colWidths=[40*mm, 28*mm, 25*mm, 16*mm, 28*mm, 16*mm, 17*mm])
+        ps2 = _tbl_style()
+        for ri, row in enumerate(p2_rows[1:], 1):
+            ms = row[-1]
+            c = rl_colors.HexColor('#10B981') if ms == 'In Mandate' else rl_colors.HexColor('#EF4444')
+            ps2.add('TEXTCOLOR', (6, ri), (6, ri), c)
+            ps2.add('FONTNAME', (6, ri), (6, ri), 'Helvetica-Bold')
+        p2_tbl.setStyle(ps2)
+        story.append(p2_tbl)
+    else:
+        story.append(Paragraph("No active deals in Closing or IC Review at this time.", S['body']))
+    story.append(Spacer(1, 8*mm))
+
+    # ── Section 3: Total Asset Value ──────────────────────────────────────────
+    story.append(Paragraph("Section 3 — Total Asset Value", S['h2']))
+    story.append(HRFlowable(width="100%", thickness=0.5, color=rl_colors.HexColor('#E5E7EB'), spaceAfter=4))
+    tav_highlight = Table([[f"USD {total_tav:,.0f}", "Total Asset Value"]], colWidths=[85*mm, 85*mm])
+    tav_highlight.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (0, 0), rl_colors.HexColor('#1B3A6B')),
+        ('TEXTCOLOR', (0, 0), (0, 0), rl_colors.white),
+        ('FONTNAME', (0, 0), (0, 0), 'Helvetica-Bold'), ('FONTSIZE', (0, 0), (0, 0), 18),
+        ('BACKGROUND', (1, 0), (1, 0), rl_colors.HexColor('#00A8C6')),
+        ('TEXTCOLOR', (1, 0), (1, 0), rl_colors.white),
+        ('FONTNAME', (1, 0), (1, 0), 'Helvetica'), ('FONTSIZE', (1, 0), (1, 0), 11),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'), ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('TOPPADDING', (0, 0), (-1, -1), 12), ('BOTTOMPADDING', (0, 0), (-1, -1), 12),
+    ]))
+    story.append(tav_highlight)
+    story.append(Spacer(1, 4*mm))
+
+    story.append(Paragraph("Breakdown by Sector", S['h3']))
+    sec_rows = [['Sector', 'Total Valuation (USD)', '% of TAV']]
+    for sec, val in sorted(sector_breakdown.items(), key=lambda x: -x[1]):
+        pct = (val / total_tav * 100) if total_tav else 0
+        sec_rows.append([sec, f"${val:,.0f}", f"{pct:.1f}%"])
+    sec_tbl = Table(sec_rows, colWidths=[70*mm, 60*mm, 40*mm])
+    sec_tbl.setStyle(_tbl_style())
+    story.append(sec_tbl)
+    story.append(Spacer(1, 4*mm))
+
+    story.append(Paragraph("Breakdown by Entity Type (IBC vs ICON)", S['h3']))
+    ent_rows = [['Entity Type', 'Total Valuation (USD)', '% of TAV']]
+    for et, val in sorted(entity_breakdown.items(), key=lambda x: -x[1]):
+        pct = (val / total_tav * 100) if total_tav else 0
+        ent_rows.append([et, f"${val:,.0f}", f"{pct:.1f}%"])
+    ent_tbl = Table(ent_rows, colWidths=[70*mm, 60*mm, 40*mm])
+    ent_tbl.setStyle(_tbl_style())
+    story.append(ent_tbl)
+    story.append(Spacer(1, 8*mm))
+
+    # ── Section 4: Investor Base Summary ─────────────────────────────────────
+    story.append(Paragraph("Section 4 — Investor Base Summary", S['h2']))
+    story.append(HRFlowable(width="100%", thickness=0.5, color=rl_colors.HexColor('#E5E7EB'), spaceAfter=4))
+    s4_data = [
+        ['Metric', 'Count'],
+        ['Total Investors', str(total_inv)],
+        ['Approved', str(approved_inv)],
+        ['Individual Investors', str(ind_inv)],
+        ['Corporate / Institutional', str(corp_inv)],
+    ]
+    s4_tbl = Table(s4_data, colWidths=[100*mm, 70*mm])
+    s4_tbl.setStyle(_tbl_style())
+    story.append(s4_tbl)
+    story.append(Spacer(1, 8*mm))
+
+    # ── Section 5: Compliance Summary ────────────────────────────────────────
+    story.append(Paragraph("Section 5 — Compliance Summary", S['h2']))
+    story.append(HRFlowable(width="100%", thickness=0.5, color=rl_colors.HexColor('#E5E7EB'), spaceAfter=4))
+    sc_rate = f"{(total_sc / max(total_inv, 1) * 100):.0f}%" if total_inv else "N/A"
+    s5_data = [
+        ['Compliance Metric', 'Value'],
+        ['Investors Approved', str(approved_inv)],
+        ['Investors Pending KYC', str(pending_inv)],
+        ['Investors Flagged (AML/KYC)', str(flagged_inv)],
+        ['Investors Rejected', str(rejected_inv)],
+        ['Mandate Exceptions (Active Deals)', str(mandate_exceptions)],
+        ['AI Scorecard Completion Rate', sc_rate],
+    ]
+    s5_tbl = Table(s5_data, colWidths=[100*mm, 70*mm])
+    s5s = _tbl_style()
+    for ri, row in enumerate(s5_data[1:], 1):
+        v = row[1]
+        if v not in ('0', 'N/A', '100%') and ri in [3, 4, 5, 6]:
+            s5s.add('TEXTCOLOR', (1, ri), (1, ri), rl_colors.HexColor('#EF4444'))
+            s5s.add('FONTNAME', (1, ri), (1, ri), 'Helvetica-Bold')
+    s5_tbl.setStyle(s5s)
+    story.append(s5_tbl)
+
+    doc.build(story, onFirstPage=hf, onLaterPages=hf)
+    buf.seek(0)
+    fname = f"TAV_Report_{quarter_label.replace(' ', '_')}.pdf"
+    return StreamingResponse(buf, media_type="application/pdf", headers={"Content-Disposition": f'attachment; filename="{fname}"'})
+

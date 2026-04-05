@@ -139,7 +139,7 @@ export default function Dashboard() {
           <div className="bg-white border border-[#E5E7EB] rounded-sm shadow-sm p-5">
             <p className="text-xs font-semibold text-[#6B7280] uppercase tracking-wider mb-1">Investor Queue</p>
             <p className="text-sm font-bold text-[#1F2937] mb-4">Status Distribution</p>
-            <ResponsiveContainer width="100%" height={180}>
+            <ResponsiveContainer width="100%" height={180} style={{ maxHeight: '250px' }}>
               <BarChart data={chartsData.investor_funnel} margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#F3F4F6" />
                 <XAxis dataKey="status" tick={{ fontSize: 11, fill: '#6B7280' }} axisLine={false} tickLine={false} />

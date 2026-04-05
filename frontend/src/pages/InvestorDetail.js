@@ -99,6 +99,7 @@ export default function InvestorDetail() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const canDecide = user?.role === 'compliance';
+  const canExportPDF = user?.role === 'compliance';
   const [investor, setInvestor] = useState(null);
   const [documents, setDocuments] = useState([]);
   const [scorecard, setScorecard] = useState(null);
@@ -107,6 +108,24 @@ export default function InvestorDetail() {
   const [deciding, setDeciding] = useState('');
   const [error, setError] = useState('');
   const [decisionSuccess, setDecisionSuccess] = useState('');
+
+  const handleExportKYCPDF = async () => {
+    try {
+      const res = await fetch(`${API}/api/investors/${id}/export-pdf`, { credentials: 'include' });
+      if (!res.ok) throw new Error('PDF generation failed');
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `KYC_Pack_${investor?.legal_name?.replace(/ /g, '_') || id}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      setError(e.message);
+    }
+  };
 
   const fetchAll = useCallback(async () => {
     setLoading(true);
@@ -230,9 +249,20 @@ export default function InvestorDetail() {
             <span className="text-xs text-[#6B7280] font-mono">{investor.type}</span>
           </div>
         </div>
-        <button onClick={fetchAll} className="text-sm text-[#6B7280] hover:text-[#1B3A6B] flex items-center gap-1.5 transition-colors mt-1" data-testid="refresh-btn">
-          <RefreshCw size={14} /> Refresh
-        </button>
+        <div className="flex items-center gap-3 mt-1">
+          {canExportPDF && (
+            <button
+              onClick={handleExportKYCPDF}
+              data-testid="export-kyc-pack-btn"
+              className="flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-[#252523] text-white rounded-sm hover:bg-[#333333] transition-colors border border-[#444444]"
+            >
+              <Download size={14} /> Export KYC Pack
+            </button>
+          )}
+          <button onClick={fetchAll} className="text-sm text-[#6B7280] hover:text-[#1B3A6B] flex items-center gap-1.5 transition-colors mt-1" data-testid="refresh-btn">
+            <RefreshCw size={14} /> Refresh
+          </button>
+        </div>
       </div>
 
       {/* Error / Success banners */}

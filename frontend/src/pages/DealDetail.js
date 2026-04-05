@@ -68,6 +68,25 @@ export default function DealDetail() {
 
   const canDecide = ['compliance', 'risk'].includes(user?.role);
   const isRisk = user?.role === 'risk';
+  const canExportPDF = ['compliance', 'risk'].includes(user?.role);
+
+  const handleExportPDF = async () => {
+    try {
+      const res = await fetch(`${API}/api/deals/${id}/export-pdf`, { credentials: 'include' });
+      if (!res.ok) throw new Error('PDF generation failed');
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `IC_Pack_${deal?.company_name?.replace(/ /g, '_') || id}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      setError(e.message);
+    }
+  };
 
   const fetchAll = useCallback(async () => {
     setLoading(true);
@@ -227,9 +246,20 @@ export default function DealDetail() {
             <span className="text-xs text-[#6B7280] font-semibold">{STAGE_LABELS[deal.pipeline_stage] || deal.pipeline_stage}</span>
           </div>
         </div>
-        <button onClick={fetchAll} className="text-sm text-[#6B7280] hover:text-[#1B3A6B] flex items-center gap-1.5 transition-colors mt-1">
-          <RefreshCw size={14} /> Refresh
-        </button>
+        <div className="flex items-center gap-3 mt-1">
+          {canExportPDF && (
+            <button
+              onClick={handleExportPDF}
+              data-testid="export-ic-pack-btn"
+              className="flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-[#252523] text-white rounded-sm hover:bg-[#333333] transition-colors border border-[#444444]"
+            >
+              <Download size={14} /> Export IC Pack
+            </button>
+          )}
+          <button onClick={fetchAll} className="text-sm text-[#6B7280] hover:text-[#1B3A6B] flex items-center gap-1.5 transition-colors">
+            <RefreshCw size={14} /> Refresh
+          </button>
+        </div>
       </div>
 
       {/* Pipeline Progress */}

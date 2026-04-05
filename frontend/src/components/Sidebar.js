@@ -12,12 +12,12 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
-const navItems = [
+const ALL_NAV_ITEMS = [
   { path: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
   { path: '/investors', icon: Users, label: 'Investors' },
   { path: '/deals', icon: TrendingUp, label: 'Deals' },
   { path: '/portfolio', icon: Briefcase, label: 'Portfolio' },
-  { path: '/reports', icon: FileText, label: 'Reports' },
+  { path: '/reports', icon: FileText, label: 'Reports', roles: ['compliance'] },
   { path: '/settings', icon: Settings, label: 'Settings' },
 ];
 
@@ -33,13 +33,17 @@ const roleLabels = {
   manager: 'Fund Manager',
 };
 
-export default function Sidebar() {
+export default function Sidebar({ onClose }) {
   const location = useLocation();
   const { user, logout } = useAuth();
 
+  const navItems = ALL_NAV_ITEMS.filter(
+    item => !item.roles || item.roles.includes(user?.role)
+  );
+
   return (
     <div
-      className="w-64 flex-shrink-0 flex flex-col h-screen sticky top-0"
+      className="w-64 flex-shrink-0 flex flex-col h-screen"
       style={{ backgroundColor: '#252523', borderRight: '1px solid #333333' }}
       data-testid="sidebar"
     >
@@ -64,6 +68,7 @@ export default function Sidebar() {
             <Link
               key={path}
               to={path}
+              onClick={onClose}
               data-testid={`sidebar-nav-${label.toLowerCase()}`}
               className={`flex items-center gap-3 px-6 py-2.5 text-sm font-medium transition-all duration-150 ${
                 isActive
