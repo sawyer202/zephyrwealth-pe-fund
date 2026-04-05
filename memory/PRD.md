@@ -4,7 +4,7 @@
 Building ZephyrWealth.ai — a professional back-office platform for a licensed Bahamian Private Equity fund. Target users: Compliance Officers, Risk Officers, and Fund Managers.
 
 ## App URL
-https://pe-back-office.preview.emergentagent.com
+https://compliance-hub-demo.preview.emergentagent.com
 
 ## Tech Stack
 - **Frontend**: React, Tailwind CSS, Shadcn UI, Recharts, Lucide Icons

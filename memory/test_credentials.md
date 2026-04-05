@@ -64,4 +64,4 @@
 - Manager: Zephyr Asset Management Ltd
 
 ## App URL
-https://pe-back-office.preview.emergentagent.com
+https://compliance-hub-demo.preview.emergentagent.com

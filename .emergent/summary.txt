@@ -2,57 +2,62 @@
 Building ZephyrWealth.ai — a professional back-office platform for a licensed Bahamian Private Equity fund. Target users are Compliance Officers, Risk Officers, and Fund Managers.
 PRODUCT REQUIREMENTS:
 - Phase 1 (Completed): Security Setup, Authentication + Role System, Executive Dashboard Shell.
-- Phase 2 (Completed): Investor Onboarding (KYC) flow, AI Compliance Scorecard utilizing Claude API via Emergent Universal Key, and local document file storage.
-- Phase 3 (Completed): Bug fixes, Deal Pipeline Kanban (), Dashboard Charts (Recharts), and Role-Based UI visibility toggling.
-- Phase 4/Future (Pending): PDF generation for reports/summaries.
+- Phase 2 (Completed): Investor Onboarding (KYC) flow, AI Compliance Scorecard utilizing Claude API, and local document file storage.
+- Phase 3 (Completed): Deal Pipeline Kanban, Dashboard Charts (Recharts), and Role-Based UI visibility toggling.
+- Phase 4 (Completed): PDF generation for reports/summaries (IC Pack, KYC Pack, TAV Report), Audit Logs viewer, Demo Seed Data, and a Demo Reset function.
 
 **User's preferred language**: English (INSTRUCT next agent to respond in English only)
 
-**what currently exists?**: 
-Phase 1, Phase 2, and Phase 3 are fully built, integrated, and successfully tested. The platform has a React + Tailwind frontend with a FastAPI + Local MongoDB backend. Features currently live include: JWT role-based Auth, Executive Dashboard with Recharts (funnel/pipeline visualization), 4-Step Investor Onboarding Form, AI Compliance Scorecard generator, Deal Pipeline Kanban board with mandate filters, and Role-Based UI visibility rules tailored for Compliance, Risk, and Manager roles.
+**what currently exists?** 
+Phase 1, 2, 3, and 4 are fully built, integrated, and successfully tested. The platform features a React + Tailwind frontend with a FastAPI + Local MongoDB backend. Current features include: JWT role-based Auth (with  enforced), mobile-responsive UI, Executive Dashboard with Recharts, Kanban deal pipeline, Investor/Deal detail pages, ReportLab-based PDF exports (Deal IC Pack, Investor KYC Pack, TAV Report), an Audit Logs tracking system with UI filtering, and a fully functional, idempotent Demo Data Seed and Reset mechanism.
 
 **Last working item**:
-    - Last item agent was working: The agent completed all Phase 3 tasks, including fixing the  bug, implementing the Deal Kanban, adding Recharts to the Dashboard, and applying role-based UI gating. The agent ran the  which returned a 100% pass rate (36/36 backend tests and all frontend flows), updated the , and called the finish tool.
-    - Status: NONE
+    - Last item agent was working: Implementing the Demo Reset button on the  page (Compliance role only). This included adding a confirmation modal, integrating  for success toasts, and building the  backend endpoint to clear test data and restore pristine Phase 4 demo data.
+    - Status: NONE (Completed and finished by the agent)
     - Agent Testing Done: Y
-    - Which testing method agent to use?: NA (Testing for Phase 3 is completed).
+    - Which testing method agent to use?: NA (Testing is already done, functionality was verified via bash commands and screenshots).
     - User Testing Done: N
 
 **All Pending/In progress Issue list**: 
-None. (The previous P0 issue  was successfully resolved in this session).
+None. 
 
-**In progress Task List**:
+**In progress Task List**: 
 None.
 
 **Upcoming and Future Tasks**
     Upcoming Tasks:
-    - Feature: Deal Summary PDF export (P2) - Generate a polished PDF from the DealDetail page that bundles deal info, health score, and mandate checks for IC presentations. (This was suggested as the next step during task finish).
-    
+    - Feature: Preview Demo dry-run mode for the reset (P2) - An enhancement suggested by the previous agent to show a confirmation summary of exactly how many records will be affected before committing the demo reset, allowing the compliance officer to audit the scope without executing it.
+
     Future Tasks:
-    - General PDF report generation utilizing local file storage (P2).
+    - Await user instructions for Phase 5 or further enhancements.
 
 **Completed work in this session**
-- Fixed P0 bug  in  by adding an array guard. (DONE)
-- Implemented Deal Pipeline Kanban () with Add New Deal modal and mandate filters. (DONE)
-- Added  route linking to  page. (DONE)
-- Integrated Recharts to  for Investor Funnel and Deal Pipeline metrics. (DONE)
-- Implemented Role-Based UI: Hiding New Investor and approve/reject flows from Fund Managers and Risk Officers; gating transaction executions. (DONE)
-- Full E2E tests run via  with 100% passing results. (DONE)
+- Verified and fixed  flag for authentication cookies across the app (DONE).
+- Fixed mobile responsiveness for Sidebar, Dashboard KPI cards/charts, and QueueTable (DONE).
+- Feature 8: Deal Summary PDF (IC Pack) export via ReportLab (DONE).
+- Feature 9: Investor KYC Pack PDF export via ReportLab (DONE).
+- Feature 10: Audit Log Viewer  with filtering and CSV export (DONE).
+- Feature 11: Total Asset Value (TAV) Regulatory Report PDF generation (DONE).
+- Feature 12: Idempotent Demo Seed Data function for live product demonstration (DONE).
+- Added  for toast notifications and implemented the Demo Reset button/modal (DONE).
+- Ran E2E tests using  resulting in a 100% pass rate (39/39 tests) (DONE).
 
 **Earlier issues found/mentioned but not fixed**
 None.
 
 **Known issue recurrence from previous fork**
-None.
+- Issue recurrence in previous fork: None.
+- Recurrence count: 0
+- Status: RESOLVED
 
 **Code Architecture**
 
 
 **Key Technical Concepts**
-Frontend: React, Tailwind CSS, Shadcn UI, Recharts
-Backend: FastAPI, Python, local filesystem for documents
+Frontend: React, Tailwind CSS, Shadcn UI, Recharts, Sonner (Toasts)
+Backend: FastAPI, Python, ReportLab (PDF Generation)
 Database: MongoDB (Local environment)
-Architecture: REST API with JWT-based Authentication
+Architecture: REST API with JWT-based Authentication (Secure Cookies)
 AI Integration: Emergent Universal Key (Claude Sonnet) directly in FastAPI
 
 **key DB schema**
@@ -62,43 +67,53 @@ AI Integration: Emergent Universal Key (Claude Sonnet) directly in FastAPI
   - : {_id, entity_id, entity_type, scorecard_data, recommendation}
   - : {_id, company_name, sector, geography, expected_irr, entry_valuation, entity_type, pipeline_stage, status}
   - : {_id, fund_name, allowed_sectors[], allowed_geographies[], irr_min, irr_max}
+  -  (NEW): {_id, user_id, user_email, user_role, user_name, action, target_id, target_type, timestamp, notes}
+  -  (NEW): {_id, fund_name, license_number, fund_manager, mandate}
 
 **changes in tech stack**
-None.
+- Added  to Python backend for PDF generation.
+- Added  to React frontend for toast notifications.
 
 **All files of reference** 
--  (Updated to fix array crash and implement role-gating)
--  (Updated for role-gating)
--  (Overwritten to implement Kanban UI)
--  (Updated to include Recharts)
--  (Updated to include deal routing)
--  (Updated to reflect Phase 3 completion)
+-  (Updated to include Phase 4 endpoints, PDF generation, audit logs, and demo reset)
+-  (Updated to include  route and )
+-  &  (Updated for mobile responsiveness and new nav items)
+-  &  (Updated for mobile responsiveness)
+-  &  (Updated to add PDF export buttons)
+-  (Created for Audit Logs, TAV generation, and Demo Reset)
+-  (Updated)
+-  (Updated)
 
 **Areas that need refactoring**:
 None. Code is stable and passed 100% testing.
 
 **key api endpoints**
--  
--  
--  
--  
+- 
+- 
+- 
+- 
 - 
 
 **Critical Info for New Agent**
-- Phase 3 is fully implemented and passed testing. You are waiting for the user to confirm the next steps (e.g., if they want to build the Deal Summary PDF export enhancement suggested by the previous agent). Do not blindly start writing code; use  to confirm their priority if they haven't explicitly stated it in their next message.
+- Phase 4 is completely finished and passed all E2E tests via the testing agent. 
+- You MUST wait for the user to provide new instructions or requirements. Use  to verify their next priorities before beginning any new code implementation.
+-  is active. API tests must account for standard secure cookie behavior.
 
 **documents and test reports created in this job**
   - 
-  -  (Updated)
+  - 
+  - 
 
 **Last 10 User Messages and any pending HUMAN messages** 
-- *Message 2*: User asked agent to use  to confirm plan.
-- *Message 5*: User provided explicit Confirmed Phase 3 Plan outlining Kanban behaviour, mandate seeding, charts, and role-based UI rules.
-- *Messages 7-47*: Various tool outputs confirming file edits, screenshot success, and a 100% passing test report from the testing agent.
-- *Message 53 (Agent)*: The agent successfully finished the Phase 3 tasks, updated PRD, and proposed a Deal Summary PDF export enhancement to the user.
+- *Message 129*: User requested adding a Demo Reset button to  with a confirmation modal and success toast using  to restore pristine seed data. (COMPLETED)
+- *Message 128*: Agent completed Phase 4 E2E testing with a 100% pass rate. (COMPLETED)
+- *Message 119-122*: Agent executed  for regression and Phase 4 validation. (COMPLETED)
+- *Message 34 & 31*: User provided the full Phase 4 prompt outlining Step 0 (Mobile UI + COOKIE_SECURE) and Features 8-12 (PDFs, Reports, Seed Data). (COMPLETED)
+- *Message 7*: User asked to verify the  fix on the deployed URL before starting Phase 4 features. (COMPLETED)
+- *Message 4 & 2*: User asked agent to use  to confirm the plan. (COMPLETED)
 
 **Project Health Check:**
-Healthy (All tests passed, Phase 3 completed).
+Healthy (All tests passed, Phase 4 completely deployed and functional).
 
 **3rd Party Integrations**
 - Anthropic Claude API (Claude Sonnet for Compliance Scorecard) — uses Emergent LLM Key.
@@ -110,7 +125,7 @@ Healthy (All tests passed, Phase 3 completed).
   - Known regressions: None.
 
 **Credentials to test flow:**
-Review . Standard seed format is  (e.g., , , ).
+Review . Standard seed format is  (e.g., , , ) with password .
 
 **What agent forgot to execute**
-Nothing. All tasks requested by the user for Phase 3 were fully completed and tested.</analysis>
+Nothing. All tasks requested by the user for Phase 4, including the subsequent Demo Reset request, were successfully implemented and verified.</analysis>
