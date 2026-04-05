@@ -28,4 +28,4 @@
 | /api/health | GET | Health check |
 
 ## App URL
-https://17f25956-4446-42e4-9759-5c3bf5c9b867.preview.emergentagent.com
+https://pe-compliance-hub.preview.emergentagent.com
