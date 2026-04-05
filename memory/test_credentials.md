@@ -31,11 +31,58 @@
 | /api/investors/{id}/scorecard | GET | Get latest scorecard |
 | /api/investors/{id}/decision | POST | Make decision (approve/reject/more_info) |
 | /api/investors/{id}/export-pdf | GET | KYC Pack PDF (compliance only) |
+| /api/investors/{id}/fund-participation | PATCH | Update share class + capital (compliance only) |
 | /api/deals | GET | List deals |
 | /api/deals/{id}/export-pdf | GET | IC Pack PDF (compliance + risk only) |
 | /api/audit-logs | GET | Audit log with filters (compliance/manager only) |
 | /api/reports/tav-pdf | GET | TAV Regulatory Report PDF (compliance only) |
+| /api/portfolio/summary | GET | Portfolio KPIs + chart data + holdings |
+| /api/agents | GET | List placement agents |
+| /api/agents | POST | Create placement agent (compliance only) |
+| /api/agents/{id} | GET | Agent detail with linked investors + invoices |
+| /api/agents/{id} | PATCH | Update agent (compliance only) |
+| /api/capital-calls | GET | List capital calls (compliance + risk) |
+| /api/capital-calls | POST | Create draft capital call (compliance only) |
+| /api/capital-calls/{id}/issue | POST | Issue capital call (compliance only) |
+| /api/capital-calls/{id} | GET | Capital call detail with line items |
+| /api/capital-calls/{id}/line-items/{investor_id} | PATCH | Mark line item received/defaulted |
+| /api/capital-calls/{id}/notices | GET | Download all notices as ZIP or PDF |
+| /api/capital-calls/{id}/export-csv | GET | Export line items as CSV |
+| /api/trailer-fees/generate | POST | Generate trailer fee invoices (compliance only) |
+| /api/trailer-fees | GET | List trailer fee invoices |
+| /api/trailer-fees/{id} | GET | Invoice detail |
+| /api/trailer-fees/{id}/issue | POST | Issue invoice |
+| /api/trailer-fees/{id}/mark-paid | POST | Mark as paid |
+| /api/trailer-fees/{id}/pdf | GET | Trailer fee invoice PDF |
 | /api/health | GET | Health check |
+
+## Phase 5 Seed Data
+
+| Investor | Share Class | Committed Capital |
+|----------|-------------|-------------------|
+| Cayman Tech Ventures SPV Ltd | Class A | $750,000 |
+| Nassau Capital Partners IBC | Class A | $500,000 |
+| Marcus Harrington | Class B | $150,000 |
+| Yolanda Santos | Class B | $100,000 |
+| Meridian Global Holdings Ltd | Class C | $200,000 |
+| Olympus Private Capital Ltd | Class C | $0 (rejected) |
+
+**Seed Totals (all investors):** Committed $1,700,000 | Called $675,000 | Uncalled $1,025,000
+**Dashboard (approved only):** Committed $1,400,000 | Called $630,000 | Uncalled $770,000 | Call Rate 45%
+
+| Placement Agent | VAT | Linked Investors |
+|----------------|-----|-----------------|
+| Island Capital Advisors Ltd | 10% VAT | Meridian Global Holdings |
+| Caribbean Wealth Partners | No VAT | Olympus Private Capital |
+
+| Capital Call | % | Total | Status |
+|-------------|---|-------|--------|
+| Q1 2026 — Initial Drawdown | 20% | $300,000 | Issued (all received) |
+| Q2 2026 — Harbour House Acquisition | 25% | $375,000 | Issued (Yolanda pending) |
+
+| Trailer Fee Invoice | Total | Status |
+|--------------------|-------|--------|
+| TF-2025-001 (Island Capital, 2025) | $1,650 incl. VAT | Issued |
 
 ## Seeded Demo Investors (Phase 4 — Idempotent)
 

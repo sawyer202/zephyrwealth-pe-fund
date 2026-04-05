@@ -97,7 +97,8 @@ https://compliance-hub-demo.preview.emergentagent.com
 ## Test Results
 - Phase 3: 36/36 (100%)
 - Phase 4: 39/39 (100%)
-- Phase 5: 34/34 (100%)
+- Phase 5 Portfolio Analytics: 34/34 (100%)
+- Phase 5 Capital Calls: 56/56 (100%)
 
 ---
 
@@ -107,7 +108,47 @@ https://compliance-hub-demo.preview.emergentagent.com
 - Refactor server.py into modules (auth, deals, investors, reports, pdf_generators) — 1738 lines currently
 - Use shadcn DatePicker instead of native date inputs in Reports filter bar and TAV modal
 
-### Phase 5 — Portfolio Analytics (DONE — 2026-04-05)
+### Phase 5 — Capital Calls & Trailer Fee Automation (DONE — 2026-04-05)
+
+**Step 1: Data Model Updates**
+- New collections: `placement_agents`, `capital_calls`, `trailer_fee_invoices`
+- New investor fields: `share_class`, `committed_capital`, `capital_called`, `capital_uncalled`, `placement_agent_id`, `deal_associations`
+
+**Step 2: InvestorDetail Fund Participation** (Compliance only)
+- Share class dropdown (A/B/C), committed capital input, read-only called/uncalled
+- Class C: placement agent dropdown + deal association multi-select
+- `PATCH /api/investors/{id}/fund-participation`
+
+**Step 3: Placement Agents Management** (`/agents` — Compliance only)
+- Table: name, company, email, VAT status, linked investors, total fees
+- Add Agent modal with all schema fields
+- `GET/POST /api/agents`, `GET/PATCH /api/agents/{id}`
+- AgentDetail: agent info, linked Class C investors, invoice history
+
+**Step 4 & 5: Capital Call Engine** (`/capital-calls` — Compliance + Risk)
+- 3-step modal: Setup → Preview → Issue
+- Fund Level (Class A/B) or Deal Specific (Class C)
+- Capital Call Detail: line items, mark received/defaulted, 8% p.a. interest accrual
+- Export Notices (PDF/ZIP), Export Summary CSV
+- `GET/POST /api/capital-calls`, `POST /{id}/issue`, `GET /{id}`, `PATCH /{id}/line-items/{investor_id}`
+- `GET /{id}/notice-pdf/{investor_id}`, `GET /{id}/notices`, `GET /{id}/export-csv`
+
+**Step 6: Trailer Fee Invoice Generator** (0.75% × committed_capital, +10% VAT if registered)
+- Generate modal on /agents page: select year + agents
+- Invoice Detail: line items, subtotal, VAT, total due
+- Issue / Mark Paid / Export PDF
+- `POST /api/trailer-fees/generate`, `GET/GET/{id}/POST/{id}/issue/POST/{id}/mark-paid/GET/{id}/pdf`
+
+**Step 7: Dashboard & Portfolio Updates**
+- Dashboard: 8 KPI cards (4 investor/deal + 4 capital)
+- Portfolio: 5th KPI card (Total Committed), Capital Called vs Uncalled by Share Class chart
+
+**Step 8: Seed Data**
+- 2 placement agents (Island Capital Advisors, Caribbean Wealth Partners)
+- 5 investors updated with share class + committed capital ($1.7M total)
+- 2 capital calls (Q1 2026 $300K all received, Q2 2026 $375K with 1 pending)
+- 1 trailer fee invoice (Island Capital 2025, $1,650 incl. 10% VAT, issued)
+- Test: 56/56 pass (100%)
 - **Feature 13 — Portfolio Analytics** (`/portfolio`): Accessible to all 3 roles.
   - Section 1 — KPI Strip: Total Portfolio Value, Active Investments (IC Review + Closing), Weighted Avg IRR (valuation-weighted), Mandate Exception Rate %
   - Section 2 — 4 Charts: Sector Allocation donut, Geography Allocation donut, IRR Distribution horizontal bar (In Mandate=teal, Exception=amber), Pipeline Stage Value bar
