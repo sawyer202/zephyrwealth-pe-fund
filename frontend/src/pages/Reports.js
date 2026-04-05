@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   FileText, Download, Filter, ChevronLeft, ChevronRight,
-  RefreshCw, AlertTriangle, Loader2, BarChart3, X,
+  RefreshCw, AlertTriangle, Loader2, BarChart3, X, RotateCcw, ShieldAlert,
 } from 'lucide-react';
+import { toast } from 'sonner';
 import { useAuth } from '../context/AuthContext';
 
 const API = process.env.REACT_APP_BACKEND_URL;
@@ -107,6 +108,10 @@ export default function Reports() {
   const [generatingTAV, setGeneratingTAV] = useState(false);
   const [tavError, setTavError] = useState('');
 
+  // Demo Reset Modal
+  const [showReset, setShowReset] = useState(false);
+  const [resetting, setResetting] = useState(false);
+
   const fetchLogs = useCallback(async () => {
     setLoading(true);
     setError('');
@@ -173,8 +178,7 @@ export default function Reports() {
     URL.revokeObjectURL(url);
   };
 
-  const generateTAV = async () => {
-    setGeneratingTAV(true);
+  const generateTAV = async () => {    setGeneratingTAV(true);
     setTavError('');
     try {
       const params = new URLSearchParams({ from: tavFrom, to: tavTo });
@@ -197,6 +201,33 @@ export default function Reports() {
       setTavError(e.message);
     } finally {
       setGeneratingTAV(false);
+    }
+  };
+
+  const executeDemoReset = async () => {
+    setResetting(true);
+    try {
+      const res = await fetch(`${API}/api/admin/demo-reset`, {
+        method: 'POST',
+        credentials: 'include',
+      });
+      if (!res.ok) {
+        const e = await res.json();
+        throw new Error(e.detail || 'Demo reset failed');
+      }
+      const data = await res.json();
+      const c = data.cleaned || {};
+      setShowReset(false);
+      toast.success('Demo data restored successfully', {
+        description: `Removed ${(c.test_investors_removed || 0) + (c.demo_investors_removed || 0)} investors, ${(c.test_deals_removed || 0) + (c.demo_deals_removed || 0)} deals, ${c.audit_logs_cleared || 0} log entries. Fresh seed data is now live.`,
+        duration: 6000,
+      });
+      setPage(1);
+    } catch (e) {
+      setShowReset(false);
+      toast.error('Demo reset failed', { description: e.message });
+    } finally {
+      setResetting(false);
     }
   };
 
@@ -244,6 +275,14 @@ export default function Reports() {
             className="flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-[#1B3A6B] text-white rounded-sm hover:bg-[#152e56] transition-colors"
           >
             <BarChart3 size={14} /> Generate TAV Report
+          </button>
+          <button
+            onClick={() => setShowReset(true)}
+            data-testid="demo-reset-btn"
+            className="flex items-center gap-2 px-3 py-2 text-sm font-semibold text-[#EF4444] bg-white border border-[#EF4444]/30 rounded-sm hover:bg-[#EF4444]/5 transition-colors"
+            title="Reset demo data to pristine state"
+          >
+            <RotateCcw size={14} /> Demo Reset
           </button>
         </div>
       </div>
@@ -496,6 +535,93 @@ export default function Reports() {
           </div>
         </div>
       )}
+
+      {/* ── Demo Reset Confirmation Modal ───────────────────────────────────── */}
+      {showReset && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" data-testid="demo-reset-modal">
+          <div className="bg-white rounded-sm shadow-xl w-full max-w-md">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-[#E5E7EB]">
+              <div className="flex items-center gap-2">
+                <ShieldAlert size={18} color="#EF4444" />
+                <h2 className="text-base font-semibold text-[#1F2937]">Reset Demo Data</h2>
+              </div>
+              <button onClick={() => setShowReset(false)} className="text-[#9CA3AF] hover:text-[#374151] transition-colors" data-testid="close-reset-modal">
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="px-6 py-5 space-y-4">
+              <div className="bg-[#EF4444]/5 border border-[#EF4444]/20 rounded-sm p-4">
+                <div className="flex items-start gap-3">
+                  <AlertTriangle size={16} color="#EF4444" className="flex-shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-sm font-semibold text-[#DC2626] mb-1">This action cannot be undone</p>
+                    <p className="text-xs text-[#374151]">
+                      This will permanently delete all <strong>TEST_</strong>-prefixed records,
+                      the Phase 4 demo investors and deals, and the entire audit log history —
+                      then restore a pristine copy of the Phase 4 seed data.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <p className="text-xs font-semibold text-[#6B7280] uppercase tracking-wider">What will be reset:</p>
+                <ul className="space-y-1.5">
+                  {[
+                    'All TEST_-prefixed investors, deals, documents, and scorecards',
+                    'The 6 Phase 4 demo investors and 5 demo deals',
+                    'All 102+ audit log entries (full clear)',
+                    'Fund profile guard (allows clean re-seed)',
+                  ].map((item, i) => (
+                    <li key={i} className="flex items-start gap-2 text-xs text-[#374151]">
+                      <span className="w-1 h-1 rounded-full bg-[#EF4444] mt-1.5 flex-shrink-0" />
+                      {item}
+                    </li>
+                  ))}
+                </ul>
+                <p className="text-xs font-semibold text-[#6B7280] uppercase tracking-wider mt-3">What will be restored:</p>
+                <ul className="space-y-1.5">
+                  {[
+                    '6 pristine investors (3 approved, 1 pending, 1 flagged, 1 rejected)',
+                    '5 pristine deals (CaribPay Closing, AgroHub IC Review, InsureSync Exception, SaaSAfrica DD, CariLogix Leads)',
+                    '15 synthetic audit log entries across 60 days',
+                    'Fund Profile: Zephyr Caribbean Growth Fund I (SCB-2024-PE-0042)',
+                  ].map((item, i) => (
+                    <li key={i} className="flex items-start gap-2 text-xs text-[#374151]">
+                      <span className="w-1 h-1 rounded-full bg-[#10B981] mt-1.5 flex-shrink-0" />
+                      {item}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-[#E5E7EB]">
+              <button
+                onClick={() => setShowReset(false)}
+                data-testid="reset-cancel-btn"
+                className="px-4 py-2 text-sm text-[#374151] bg-white border border-[#E5E7EB] rounded-sm hover:bg-[#F9FAFB] transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={executeDemoReset}
+                disabled={resetting}
+                data-testid="reset-confirm-btn"
+                className="flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-[#EF4444] text-white rounded-sm hover:bg-[#DC2626] transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+              >
+                {resetting ? (
+                  <><Loader2 size={14} className="animate-spin" /> Resetting...</>
+                ) : (
+                  <><RotateCcw size={14} /> Yes, Reset Demo Data</>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
+
