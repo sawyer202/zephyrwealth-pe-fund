@@ -1,6 +1,6 @@
 # ZephyrWealth.ai — Product Requirements Document
 
-**Last Updated:** 2026-04-05
+**Last Updated:** 2026-04-05 (Phase 3 complete)
 **Platform:** ZephyrWealth.ai
 **Type:** Professional back-office SaaS for a licensed Bahamian Private Equity fund
 
@@ -16,7 +16,7 @@ Build an institutional-grade back-office platform for Compliance Officers, Risk 
 
 ## Tech Stack
 - **Backend:** FastAPI + Python + Motor (async MongoDB)
-- **Frontend:** React 18 + Tailwind CSS + Lucide React
+- **Frontend:** React 18 + Tailwind CSS + Lucide React + Recharts
 - **Database:** MongoDB (local)
 - **Auth:** Custom JWT (httpOnly cookies) + bcrypt
 - **AI:** Anthropic Claude (`claude-4-sonnet-20250514`) via Emergent Universal Key
@@ -32,8 +32,8 @@ Build an institutional-grade back-office platform for Compliance Officers, Risk 
 ## Architecture
 
 ### Backend (FastAPI)
-- `/app/backend/server.py` — Main API server (v2.0.0)
-- Routes: `/api/auth/*`, `/api/dashboard/*`, `/api/investors`, `/api/investors/{id}`, `/api/investors/{id}/documents`, `/api/investors/{id}/scorecard`, `/api/investors/{id}/decision`, `/api/deals`, `/api/audit-logs`
+- `/app/backend/server.py` — Main API server (v3.0.0)
+- Routes: `/api/auth/*`, `/api/dashboard/*`, `/api/investors`, `/api/investors/{id}`, `/api/investors/{id}/documents`, `/api/investors/{id}/scorecard`, `/api/investors/{id}/decision`, `/api/deals`, `/api/deals/{id}`, `/api/deals/{id}/stage`, `/api/deals/{id}/health-score`, `/api/deals/{id}/execute`, `/api/audit-logs`
 - JWT auth via httpOnly cookies
 - Rate limiting: 5 failed attempts → 15 min lockout
 - File storage: `/documents/{entity_id}/{document_type}/{filename}`
@@ -42,7 +42,7 @@ Build an institutional-grade back-office platform for Compliance Officers, Risk 
 ### Frontend (React)
 - `/app/frontend/src/context/AuthContext.js` — Auth state
 - `/app/frontend/src/components/` — Sidebar, KPICard, RiskBadge, QueueTable, Layout
-- `/app/frontend/src/pages/` — Login, Dashboard, Investors, InvestorOnboarding, InvestorDetail, Deals, Portfolio, Reports, Settings
+- `/app/frontend/src/pages/` — Login, Dashboard (with Recharts), Investors, InvestorOnboarding, InvestorDetail, Deals (Kanban), DealDetail, Portfolio, Reports, Settings
 - `/app/frontend/src/constants/countries.js` — Full country list
 
 ---
@@ -83,46 +83,70 @@ Build an institutional-grade back-office platform for Compliance Officers, Risk 
 - [x] Investor detail page: entity info, contact, financial profile cards (3-column)
 - [x] UBO declarations table (corporate only)
 - [x] Documents section with download links (authenticated `/api/investors/{id}/documents/{doc_id}/download`)
-- [x] AI Scorecard panel (dark #252523 background) with:
-  - Traffic-light indicators: sanctions, identity, document, source of funds, PEP, mandate
-  - Identity confidence score (large number)
-  - Score breakdown bars (documents 0-30, source of wealth 0-25, sanctions 0-25, nationality risk 0-20)
-  - Recommendation in colored text (Approve/Review/Reject)
-  - 2-3 sentence AI summary
-  - Footer: "AI recommendation · human approval required"
-- [x] Action buttons (Approve/Request More Info/Reject) — disabled until scorecard generated
+- [x] AI Scorecard panel (dark #252523 background) with traffic-light indicators, confidence score, recommendation
+- [x] Action buttons (Approve/Request More Info/Reject) — Compliance-only; hidden for Risk/Manager
 - [x] Decisions write to audit_logs collection
 - [x] "Generate AI Review" button calls POST /api/investors/{id}/scorecard (Claude AI live)
 - [x] Regenerate button after first generation
 
-### Seed Data Phase 2
-- [x] Victoria Pemberton (individual, low risk, approved, scorecard=Approve, 3 docs)
-- [x] Apex Meridian Holdings Ltd (corporate, medium risk, pending, 2 UBOs, 4 docs)
-- [x] Dmitri Volkov (individual, high risk, flagged, scorecard=Reject, 2 docs)
+---
 
-### New MongoDB Collections
-- `documents`: {_id, entity_id, document_type, file_path, file_name, file_size, uploaded_at}
-- `compliance_scorecards`: {_id, entity_id, entity_type, scorecard_data, recommendation, generated_at, reviewed_by, decision, decision_at}
+## Phase 3 — COMPLETED (2026-04-05)
+
+### P0 Bug Fix: investors.filter crash
+- [x] Fixed array guard in Investors.js: `Array.isArray(data) ? data : data.investors || []`
+- [x] Fixed array guard in Dashboard.js investor fetch
+
+### Feature 5: Deal Pipeline Kanban (/deals)
+- [x] 4-column Kanban board: Leads → Due Diligence → IC Review → Closing
+- [x] Deal cards: company name, sector, geography, IRR%, entity type (IBC/ICON), mandate badge
+- [x] Mandate filter dropdown: All / In Mandate / Exception
+- [x] "Add New Deal" modal with fields: company name, sector, geography, asset class, entity type, IRR%, entry valuation
+- [x] Form validation — required fields check before POST
+- [x] POST /api/deals with auto mandate check and stamp duty calculation
+- [x] New deal appears in Leads column immediately after creation
+- [x] Deal card click → navigates to /deals/:id (DealDetail)
+- [x] Route /deals/:id added in App.js
+- [x] Seed data: NexaTech Caribbean (IC Review, IBC, In Mandate), West African Fintrust (Due Diligence, ICON, Exception), Nassau Microfinance (Leads, IBC, In Mandate)
+
+### Feature 5b: DealDetail (/deals/:id)
+- [x] Company info, financials, pipeline stage cards
+- [x] Pipeline stage progress indicator
+- [x] Documents section
+- [x] Deal Health Score panel (formula-based: compliance risk, financial alignment, document status, mandate status, stamp duty estimate)
+- [x] "Advance Stage" button (all roles, mandate override flow for exception deals)
+- [x] "Execute Transaction" button (compliance + risk only; hidden for manager)
+- [x] Mandate override modal (Risk Officer only) for exception deals
+- [x] ICON notice banner when entity_type = ICON
+- [x] Execute generates IBC Subscription Agreement or ICON Participation Agreement as downloadable .txt
+
+### Feature 6: Dashboard Charts
+- [x] Two Recharts BarCharts below KPI cards
+- [x] Investor funnel: status distribution (Pending/Approved/Flagged/Rejected)
+- [x] Deal pipeline: deals by stage (Leads/Due Diligence/IC Review/Closing)
+- [x] Data from GET /api/dashboard/charts
+- [x] Status colors per segment (#00A8C6, #F59E0B, #10B981, #EF4444, #6B7280)
+
+### Feature 7: Role-Based UI
+- [x] Compliance Officer: full access — New Investor button, Approve/Reject/More Info in InvestorDetail, Execute Transaction in DealDetail
+- [x] Risk Officer: no New Investor; no Approve/Reject/More Info; CAN advance stages + override mandate exceptions; CAN execute transactions
+- [x] Fund Manager: no New Investor; no Approve/Reject/More Info; no Execute Transaction; CAN advance stages
+
+### New MongoDB Collections (Phase 3 additions)
+- `deals`: {_id, company_name, sector, geography, asset_class, expected_irr, entry_valuation, entity_type (IBC/ICON), mandate_status, pipeline_stage, stamp_duty_estimate, status, created_at, created_by}
+- `fund_mandate`: {_id, fund_name, allowed_sectors[], allowed_geographies[], irr_min, irr_max, max_single_investment, updated_at}
 
 ---
 
-## Backlog — Phase 3
-
-### P0 (Critical)
-- [ ] Deal Pipeline Kanban view (/deals with drag-and-drop stages)
-- [ ] Deal detail view + AI deal scorecard
-
-### P1 (Important)
-- [ ] Dashboard charts (Recharts — investor funnel, deal stages)
-- [ ] Role-based access control enforcement (UI elements hide/show by role)
-- [ ] PDF report generation (pdf-lib)
-- [ ] Advanced audit log viewer page (/reports)
+## Backlog — Phase 4+
 
 ### P2 (Nice to have)
+- [ ] PDF report generation (pdf-lib) from DealDetail or InvestorDetail
+- [ ] Advanced audit log viewer page (/reports)
+- [ ] Portfolio analytics page (/portfolio)
 - [ ] Two-factor authentication
 - [ ] Email notifications (SendGrid)
 - [ ] Document storage integration (cloud)
-- [ ] Portfolio analytics page (/portfolio)
 - [ ] Reports export (PDF/CSV)
 - [ ] Bulk investor import (CSV)
 

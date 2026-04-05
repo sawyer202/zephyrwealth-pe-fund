@@ -6,7 +6,7 @@
 |------|-------|----------|------|
 | Compliance Officer | compliance@zephyrwealth.ai | Comply1234! | Sarah Chen |
 | Risk Officer | risk@zephyrwealth.ai | Risk1234! | Marcus Webb |
-| Fund Manager | manager@zephyrwealth.ai | Manager1234! | Manager1234! |
+| Fund Manager | manager@zephyrwealth.ai | Manager1234! | Jonathan Morrow |
 
 ## Auth Endpoints
 
