@@ -1,7 +1,7 @@
 # ZephyrWealth.ai — Product Requirements Document
 
-**Last Updated:** 2025-02-05
-**Platform:** ZephyrWealth.ai (alias: zephyrtrust.ai)
+**Last Updated:** 2026-04-05
+**Platform:** ZephyrWealth.ai
 **Type:** Professional back-office SaaS for a licensed Bahamian Private Equity fund
 
 ---
@@ -19,7 +19,7 @@ Build an institutional-grade back-office platform for Compliance Officers, Risk 
 - **Frontend:** React 18 + Tailwind CSS + Lucide React
 - **Database:** MongoDB (local)
 - **Auth:** Custom JWT (httpOnly cookies) + bcrypt
-- **AI:** Anthropic Claude via Emergent Universal Key
+- **AI:** Anthropic Claude (`claude-4-sonnet-20250514`) via Emergent Universal Key
 
 ## Design System
 - Sidebar: #252523 | Main BG: #FAFAF8 | Primary: #1B3A6B
@@ -32,16 +32,18 @@ Build an institutional-grade back-office platform for Compliance Officers, Risk 
 ## Architecture
 
 ### Backend (FastAPI)
-- `/app/backend/server.py` — Main API server
-- Routes: `/api/auth/*`, `/api/dashboard/*`, `/api/investors`, `/api/deals`, `/api/audit-logs`
+- `/app/backend/server.py` — Main API server (v2.0.0)
+- Routes: `/api/auth/*`, `/api/dashboard/*`, `/api/investors`, `/api/investors/{id}`, `/api/investors/{id}/documents`, `/api/investors/{id}/scorecard`, `/api/investors/{id}/decision`, `/api/deals`, `/api/audit-logs`
 - JWT auth via httpOnly cookies
 - Rate limiting: 5 failed attempts → 15 min lockout
-- MongoDB collections: users, investors, deals, audit_logs, login_attempts
+- File storage: `/documents/{entity_id}/{document_type}/{filename}`
+- AI: Claude via `emergentintegrations` (`EMERGENT_LLM_KEY`)
 
 ### Frontend (React)
 - `/app/frontend/src/context/AuthContext.js` — Auth state
 - `/app/frontend/src/components/` — Sidebar, KPICard, RiskBadge, QueueTable, Layout
-- `/app/frontend/src/pages/` — Login, Dashboard, Investors, Deals, Portfolio, Reports, Settings
+- `/app/frontend/src/pages/` — Login, Dashboard, Investors, InvestorOnboarding, InvestorDetail, Deals, Portfolio, Reports, Settings
+- `/app/frontend/src/constants/countries.js` — Full country list
 
 ---
 
@@ -53,46 +55,76 @@ Build an institutional-grade back-office platform for Compliance Officers, Risk 
 - [x] bcrypt password hashing
 - [x] JWT (httpOnly cookies, 8h access + 7d refresh)
 - [x] Rate limiting: 5 attempts → 15 min lockout
-- [x] Password validation (min 8, 1 uppercase, 1 number)
 - [x] Audit logging on login
 
 ### Feature 2: Executive Dashboard Shell
-- [x] Sidebar navigation (Dashboard, Investors, Deals, Portfolio, Reports, Settings)
+- [x] Sidebar navigation
 - [x] KPI cards: Total Investors, Pending KYC, Deals in Pipeline, Flagged Items
-- [x] Investor Queue tab with risk badges + status + disabled action buttons
-- [x] Deal Queue tab
+- [x] Investor Queue + Deal Queue tabs
 - [x] Demo accounts quick-fill on login page
 - [x] Role-based avatar colors in sidebar
 
-### MongoDB Collections Created
-- users, investors, deals, audit_logs, login_attempts
+---
 
-### Seeded Demo Data
-- 3 investors: Harrington (medium/pending), Castlebrook (low/approved), Meridian (high/flagged)
-- 2 deals: Nassau Waterfront (medium/due_diligence), Caribbean Logistics (low/term_sheet)
+## Phase 2 — COMPLETED (2026-04-05)
+
+### Feature 3: Investor Onboarding (4-Step Form at /investors/new)
+- [x] Step 1: Entity type toggle (Individual/Corporate), legal name, DOB/incorporation date, nationality + residence country dropdowns (full country list)
+- [x] UBO Declaration section (Corporate only): add/remove beneficial owners >10%
+- [x] Step 2: Email, phone, full address with country
+- [x] Step 3: Classification, net worth ($), annual income ($), source of wealth, investment experience, accredited declaration checkbox
+- [x] Step 4: Document upload (drag-and-drop): passport, proof of address, source of wealth doc, corporate docs (corporate only), terms acceptance
+- [x] Files stored at `/documents/{entity_id}/{document_type}/{filename}` (PDF, JPG, PNG, max 5MB)
+- [x] POST /api/investors creates investor + audit log entry
+- [x] Per-step validation, back button preserves form state
+- [x] Success → redirect to /investors
+
+### Feature 4: AI Compliance Scorecard (/investors/{id})
+- [x] Investor detail page: entity info, contact, financial profile cards (3-column)
+- [x] UBO declarations table (corporate only)
+- [x] Documents section with download links (authenticated `/api/investors/{id}/documents/{doc_id}/download`)
+- [x] AI Scorecard panel (dark #252523 background) with:
+  - Traffic-light indicators: sanctions, identity, document, source of funds, PEP, mandate
+  - Identity confidence score (large number)
+  - Score breakdown bars (documents 0-30, source of wealth 0-25, sanctions 0-25, nationality risk 0-20)
+  - Recommendation in colored text (Approve/Review/Reject)
+  - 2-3 sentence AI summary
+  - Footer: "AI recommendation · human approval required"
+- [x] Action buttons (Approve/Request More Info/Reject) — disabled until scorecard generated
+- [x] Decisions write to audit_logs collection
+- [x] "Generate AI Review" button calls POST /api/investors/{id}/scorecard (Claude AI live)
+- [x] Regenerate button after first generation
+
+### Seed Data Phase 2
+- [x] Victoria Pemberton (individual, low risk, approved, scorecard=Approve, 3 docs)
+- [x] Apex Meridian Holdings Ltd (corporate, medium risk, pending, 2 UBOs, 4 docs)
+- [x] Dmitri Volkov (individual, high risk, flagged, scorecard=Reject, 2 docs)
+
+### New MongoDB Collections
+- `documents`: {_id, entity_id, document_type, file_path, file_name, file_size, uploaded_at}
+- `compliance_scorecards`: {_id, entity_id, entity_type, scorecard_data, recommendation, generated_at, reviewed_by, decision, decision_at}
 
 ---
 
-## Backlog — Phase 2
+## Backlog — Phase 3
 
 ### P0 (Critical)
-- [ ] KYC Scorecard workflow (enables action buttons)
-- [ ] Investor onboarding form + document upload
-- [ ] Deal pipeline Kanban view
+- [ ] Deal Pipeline Kanban view (/deals with drag-and-drop stages)
+- [ ] Deal detail view + AI deal scorecard
 
 ### P1 (Important)
-- [ ] AI compliance scoring (Claude integration)
-- [ ] PDF report generation (pdf-lib)
 - [ ] Dashboard charts (Recharts — investor funnel, deal stages)
-- [ ] Role-based access control enforcement (UI + API)
+- [ ] Role-based access control enforcement (UI elements hide/show by role)
+- [ ] PDF report generation (pdf-lib)
+- [ ] Advanced audit log viewer page (/reports)
 
 ### P2 (Nice to have)
 - [ ] Two-factor authentication
 - [ ] Email notifications (SendGrid)
-- [ ] Advanced audit log viewer
-- [ ] Document storage integration
-- [ ] Portfolio analytics page
+- [ ] Document storage integration (cloud)
+- [ ] Portfolio analytics page (/portfolio)
 - [ ] Reports export (PDF/CSV)
+- [ ] Bulk investor import (CSV)
 
 ---
 
@@ -101,4 +133,5 @@ Build an institutional-grade back-office platform for Compliance Officers, Risk 
 - .env.example committed with placeholder values only
 - Real .env never committed
 - All routes authenticated via JWT cookie
-- Audit logs capture all login events
+- Audit logs capture all login events and investor decisions
+- Documents require authenticated download endpoint
