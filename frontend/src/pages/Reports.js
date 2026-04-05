@@ -137,7 +137,7 @@ export default function Reports() {
   const applyFilters = (e) => {
     e.preventDefault();
     setPage(1);
-    fetchLogs();
+    // useEffect will trigger fetchLogs via page/filter dependency change
   };
 
   const clearFilters = () => {

@@ -27,21 +27,41 @@
 | /api/investors/{id} | GET | Get single investor |
 | /api/investors/{id}/documents | POST | Upload document (multipart: file + document_type) |
 | /api/investors/{id}/documents | GET | List investor documents |
-| /api/investors/{id}/documents/{doc_id}/download | GET | Download document (authenticated) |
 | /api/investors/{id}/scorecard | POST | Generate AI compliance scorecard |
 | /api/investors/{id}/scorecard | GET | Get latest scorecard |
 | /api/investors/{id}/decision | POST | Make decision (approve/reject/more_info) |
+| /api/investors/{id}/export-pdf | GET | KYC Pack PDF (compliance only) |
 | /api/deals | GET | List deals |
-| /api/audit-logs | GET | Audit log (compliance/manager only) |
+| /api/deals/{id}/export-pdf | GET | IC Pack PDF (compliance + risk only) |
+| /api/audit-logs | GET | Audit log with filters (compliance/manager only) |
+| /api/reports/tav-pdf | GET | TAV Regulatory Report PDF (compliance only) |
 | /api/health | GET | Health check |
 
-## Seeded Phase 2 Investors (full schema)
+## Seeded Demo Investors (Phase 4 — Idempotent)
 
-| Name | Entity Type | Risk | KYC Status | Scorecard | ID prefix |
-|------|-------------|------|------------|-----------|-----------|
-| Victoria Pemberton | Individual | Low | approved | Approve (score=91) | starts with 69d... |
-| Apex Meridian Holdings Ltd | Corporate | Medium | pending | (none initially) | starts with 69d... |
-| Dmitri Volkov | Individual | High | flagged | Reject (score=34) | starts with 69d... |
+| Name | Entity Type | KYC Status | Nationality |
+|------|-------------|------------|-------------|
+| Cayman Tech Ventures SPV Ltd | Corporate | approved | Cayman Islands |
+| Nassau Capital Partners IBC | Corporate | approved | Bahamas |
+| Marcus Harrington | Individual | approved | Barbados |
+| Yolanda Santos | Individual | pending | Trinidad and Tobago |
+| Meridian Global Holdings Ltd | Corporate | flagged | Panama |
+| Olympus Private Capital Ltd | Corporate | rejected | British Virgin Islands |
+
+## Seeded Demo Deals (Phase 4 — Idempotent)
+
+| Company | Stage | Mandate | Entry Valuation |
+|---------|-------|---------|-----------------|
+| CaribPay Solutions Ltd | closing | In Mandate | $4,200,000 |
+| AgroHub Africa Ltd | ic_review | In Mandate | $2,800,000 |
+| InsureSync Caribbean ICON | ic_review | Exception | $3,100,000 |
+| SaaSAfrica BV | due_diligence | In Mandate | $1,500,000 |
+| CariLogix Ltd | leads | Exception | $900,000 |
+
+## Fund Profile
+- Fund: Zephyr Caribbean Growth Fund I
+- License: SCB-2024-PE-0042
+- Manager: Zephyr Asset Management Ltd
 
 ## App URL
 https://pe-back-office.preview.emergentagent.com
