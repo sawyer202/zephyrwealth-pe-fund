@@ -51,6 +51,7 @@ Thumbs.db
 # Test artifacts
 /test_reports/
 /auth_testing.md
+/memory/test_credentials.md
 
 # Uploads / local file storage
 /uploads/
