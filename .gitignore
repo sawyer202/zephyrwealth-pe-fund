@@ -55,3 +55,7 @@ Thumbs.db
 # Uploads / local file storage
 /uploads/
 *.pdf
+-e 
+# Environment files
+*.env
+*.env.*
