@@ -139,13 +139,11 @@ FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:3000")
 # production go-live, so both must be explicitly allowed.
 _allowed_origins = [FRONTEND_URL]
 if ".preview.emergentagent.com" in FRONTEND_URL:
-    _allowed_origins.append(
-        FRONTEND_URL.replace(".preview.emergentagent.com", ".emergent.host")
-    )
+    _allowed_origins.append(FRONTEND_URL.replace(".preview.emergentagent.com", ".emergent.host"))
 elif ".emergent.host" in FRONTEND_URL:
-    _allowed_origins.append(
-        FRONTEND_URL.replace(".emergent.host", ".preview.emergentagent.com")
-    )
+    _allowed_origins.append(FRONTEND_URL.replace(".emergent.host", ".preview.emergentagent.com"))
+_allowed_origins.append("https://zephyrtrustai.com")
+_allowed_origins.append("https://www.zephyrtrustai.com")
 
 app.add_middleware(
     CORSMiddleware,
@@ -155,6 +153,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 ```
+
+### Always-Required Allowed Origins
+The following origins **must always be present** in `_allowed_origins`. Never remove any of them:
+1. `FRONTEND_URL` (dynamic — from env var)
+2. Its counterpart domain (preview ↔ `.emergent.host`, derived automatically)
+3. `https://zephyrtrustai.com` — custom production domain
+4. `https://www.zephyrtrustai.com` — custom production domain (www)
 
 ### Rules
 1. **Never replace `_allowed_origins` with a single-item list** — login will break on production.
