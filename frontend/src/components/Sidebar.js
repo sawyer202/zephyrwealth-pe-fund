@@ -84,8 +84,8 @@ export default function Sidebar({ onClose }) {
       </nav>
 
       {/* User Info */}
-      <div className="p-4 border-t border-[#333333]">
-        <div className="flex items-start gap-3 mb-3">
+      <div className="px-4 pt-4 pb-2 border-t border-[#333333]">
+        <div className="flex items-start gap-3">
           <div
             className="w-8 h-8 rounded-sm flex items-center justify-center flex-shrink-0 text-xs font-bold text-white"
             style={{ backgroundColor: roleColors[user?.role] || '#6B7280' }}
@@ -102,13 +102,17 @@ export default function Sidebar({ onClose }) {
             </p>
           </div>
         </div>
+      </div>
+
+      {/* Logout */}
+      <div className="px-3 pb-4">
         <button
-          onClick={logout}
+          onClick={() => { if (onClose) onClose(); logout(); }}
           data-testid="logout-button"
-          className="flex items-center gap-2 w-full text-xs text-gray-500 hover:text-gray-200 transition-colors py-1"
+          className="flex items-center gap-3 w-full px-3 py-2.5 text-sm font-medium text-gray-400 hover:text-white hover:bg-[#333333] transition-all duration-150 rounded-sm"
         >
-          <LogOut size={13} strokeWidth={1.5} />
-          Sign out
+          <LogOut size={17} strokeWidth={1.5} />
+          Sign Out
         </button>
       </div>
     </div>
