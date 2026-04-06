@@ -165,7 +165,7 @@ The derivation loop runs over **both** `FRONTEND_URL` and `EMERGENT_ORIGIN`, so 
 1. **Never set `REACT_APP_BACKEND_URL` to an Emergent subdomain** — breaks same-origin cookie storage on the custom domain.
 2. **Never remove `EMERGENT_ORIGIN` from `backend/.env`** — the Emergent preview URL must stay in CORS for platform testing tools.
 3. **Never use `allow_origins=["*"]`** — incompatible with `allow_credentials=True`.
-4. **Never set cookies without `SameSite=none; Secure`** — required for the `zephyrtrustai.com` ↔ API pairing to work across potential subdomains.
+4. **Cookies use `SameSite=lax; Secure`** — the app is now fully same-origin on `zephyrtrustai.com` (frontend and API share the same domain via K8s ingress). `lax` is stricter and more secure than `none`; it blocks cross-site cookie sending by default. Do NOT revert to `samesite="none"` unless the app moves back to a cross-origin API setup.
 
 ### Verification (run after any CORS/auth change)
 ```bash

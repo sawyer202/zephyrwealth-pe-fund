@@ -44,8 +44,8 @@ async def login(request: Request, response: Response, body: LoginRequest):
     access_token = create_access_token(user_id, user["email"], user["role"])
     refresh_token = create_refresh_token(user_id)
     cookie_secure = os.environ.get("COOKIE_SECURE", "true").lower() == "true"
-    response.set_cookie(key="access_token", value=access_token, httponly=True, secure=cookie_secure, samesite="none", max_age=28800, path="/")
-    response.set_cookie(key="refresh_token", value=refresh_token, httponly=True, secure=cookie_secure, samesite="none", max_age=604800, path="/")
+    response.set_cookie(key="access_token", value=access_token, httponly=True, secure=cookie_secure, samesite="lax", max_age=28800, path="/")
+    response.set_cookie(key="refresh_token", value=refresh_token, httponly=True, secure=cookie_secure, samesite="lax", max_age=604800, path="/")
     await db.audit_logs.insert_one({"user_id": user_id, "action": "login", "target_id": None, "target_type": "auth", "timestamp": datetime.now(timezone.utc), "notes": f"Login from {client_ip}"})
     return {"id": user_id, "email": user["email"], "role": user["role"], "name": user.get("name", ""), "title": user.get("title", "")}
 
@@ -77,7 +77,8 @@ async def refresh_token_endpoint(request: Request, response: Response):
         user_id = str(user["_id"])
         new_token = create_access_token(user_id, user["email"], user["role"])
         cookie_secure = os.environ.get("COOKIE_SECURE", "true").lower() == "true"
-        response.set_cookie(key="access_token", value=new_token, httponly=True, secure=cookie_secure, samesite="none", max_age=28800, path="/")
+        response.set_cookie(key="access_token", value=new_token, httponly=True, secure=cookie_secure, samesite="lax", max_age=28800, path="/")
         return {"message": "Token refreshed"}
     except jwt.InvalidTokenError:
         raise HTTPException(status_code=401, detail="Invalid refresh token")
+
