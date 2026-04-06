@@ -23,16 +23,32 @@ app = FastAPI(title="ZephyrWealth API", version="3.0.0")
 
 FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:3000")
 
-# Always allow both the configured origin and its emergent.host production equivalent.
-# The deployment system may preserve the preview URL in FRONTEND_URL even after
-# deploying to the .emergent.host production domain, so both must be whitelisted.
+# EMERGENT_ORIGIN: set to the Emergent preview URL when FRONTEND_URL is a custom domain.
+# This ensures the Emergent preview and .emergent.host domains stay in the CORS allowlist
+# even after FRONTEND_URL is updated to a custom domain (e.g. zephyrtrustai.com).
+EMERGENT_ORIGIN = os.environ.get("EMERGENT_ORIGIN", "")
+
 _allowed_origins = [FRONTEND_URL]
-if ".preview.emergentagent.com" in FRONTEND_URL:
-    _allowed_origins.append(FRONTEND_URL.replace(".preview.emergentagent.com", ".emergent.host"))
-elif ".emergent.host" in FRONTEND_URL:
-    _allowed_origins.append(FRONTEND_URL.replace(".emergent.host", ".preview.emergentagent.com"))
-_allowed_origins.append("https://zephyrtrustai.com")
-_allowed_origins.append("https://www.zephyrtrustai.com")
+
+# Auto-derive Emergent preview ↔ production counterpart for whichever URL is primary.
+for _origin in [FRONTEND_URL, EMERGENT_ORIGIN]:
+    if not _origin:
+        continue
+    if _origin not in _allowed_origins:
+        _allowed_origins.append(_origin)
+    if ".preview.emergentagent.com" in _origin:
+        _companion = _origin.replace(".preview.emergentagent.com", ".emergent.host")
+        if _companion not in _allowed_origins:
+            _allowed_origins.append(_companion)
+    elif ".emergent.host" in _origin:
+        _companion = _origin.replace(".emergent.host", ".preview.emergentagent.com")
+        if _companion not in _allowed_origins:
+            _allowed_origins.append(_companion)
+
+# Custom production domains — always present regardless of FRONTEND_URL value.
+for _custom in ["https://zephyrtrustai.com", "https://www.zephyrtrustai.com"]:
+    if _custom not in _allowed_origins:
+        _allowed_origins.append(_custom)
 
 app.add_middleware(
     CORSMiddleware,

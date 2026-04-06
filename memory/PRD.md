@@ -113,73 +113,90 @@ Building ZephyrWealth.ai — a professional back-office platform for a licensed 
   no `/api` prefix) and `GET /api/health` (application-level check)
 - **Dual-domain CORS fix** (see critical section below)
 
+### Same-Origin Cookie Fix (Complete — 2026-04-06)
+- **Problem**: `REACT_APP_BACKEND_URL` was set to the Emergent preview URL
+  (`compliance-hub-demo.preview.emergentagent.com`). When the user accessed the app via the
+  custom domain `zephyrtrustai.com`, the browser treated all API calls as **cross-origin** and
+  blocked the `Set-Cookie` response headers under third-party cookie deprecation policies
+  (Chrome 2026+). Login appeared to succeed (response body returned user data) but the cookie
+  was never stored → Demo Reset and all protected endpoints returned `401 Not authenticated`.
+- **Fix**: Changed `REACT_APP_BACKEND_URL=https://zephyrtrustai.com` so the React app makes
+  API calls to the **same domain** as the page. The Kubernetes ingress already routes
+  `zephyrtrustai.com/api/*` → FastAPI backend (port 8001). No new proxy configuration required.
+- **FRONTEND_URL**: Updated to `https://zephyrtrustai.com` in `backend/.env`.
+- **EMERGENT_ORIGIN**: Added `https://compliance-hub-demo.preview.emergentagent.com` as a
+  separate env var in `backend/.env` to keep the Emergent preview/host URLs in the CORS
+  allowlist. The `server.py` derivation loop now iterates both `FRONTEND_URL` and
+  `EMERGENT_ORIGIN` so neither is ever dropped from `_allowed_origins`.
+- **Reverse proxy**: The K8s ingress was already handling `zephyrtrustai.com/api/*` → port 8001.
+  Verified via curl: `GET /api/health` → `{"status":"ok"}` ✅, login ✅, demo-reset ✅.
+
 ---
 
-## ⚠️ CRITICAL — Dual-Domain CORS Configuration
+## ⚠️ CRITICAL — Domain & Cookie Configuration
 
-> **Any future change to `server.py` CORS configuration MUST preserve this logic.**
+> **Any future change to `server.py` CORS config or `.env` files MUST preserve this logic.**
 
-### Problem
-The Emergent deployment system sets `FRONTEND_URL` once and skips it on subsequent deploys
-(`"secret FRONTEND_URL already exists, skipping"`). This means `FRONTEND_URL` in the
-production pod can permanently hold the **preview** URL
-(`https://<app>.preview.emergentagent.com`) even after the app is live at the **production**
-domain (`https://<app>.emergent.host`).
+### Env Vars (backend/.env)
+| Variable | Current Value | Purpose |
+|---|---|---|
+| `FRONTEND_URL` | `https://zephyrtrustai.com` | Primary CORS origin; also used as same-origin API target |
+| `EMERGENT_ORIGIN` | `https://compliance-hub-demo.preview.emergentagent.com` | Keeps Emergent preview + `.emergent.host` URLs in CORS allowlist |
 
-When the browser sends `Origin: https://<app>.emergent.host` and CORS only allows the preview
-URL, the `Access-Control-Allow-Origin` header is absent → the browser blocks every API
-response → **login silently fails**.
+### Env Vars (frontend/.env)
+| Variable | Current Value | Purpose |
+|---|---|---|
+| `REACT_APP_BACKEND_URL` | `https://zephyrtrustai.com` | All browser API calls go here — must match the page's domain |
 
-### Fix — `backend/server.py` lines 24–44
-```python
-FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:3000")
+### Why REACT_APP_BACKEND_URL = https://zephyrtrustai.com
+When `REACT_APP_BACKEND_URL` pointed to `compliance-hub-demo.preview.emergentagent.com` and the user accessed the app via `zephyrtrustai.com`, the browser blocked the `Set-Cookie` response from the cross-origin API domain (Chrome third-party cookie deprecation, 2026). Setting it to `zephyrtrustai.com` makes all API calls **same-origin** so cookies are always stored and sent without restrictions.
 
-# Always whitelist both preview ↔ production counterpart domains.
-# The deployment system may freeze FRONTEND_URL at the preview URL even after
-# production go-live, so both must be explicitly allowed.
-_allowed_origins = [FRONTEND_URL]
-if ".preview.emergentagent.com" in FRONTEND_URL:
-    _allowed_origins.append(FRONTEND_URL.replace(".preview.emergentagent.com", ".emergent.host"))
-elif ".emergent.host" in FRONTEND_URL:
-    _allowed_origins.append(FRONTEND_URL.replace(".emergent.host", ".preview.emergentagent.com"))
-_allowed_origins.append("https://zephyrtrustai.com")
-_allowed_origins.append("https://www.zephyrtrustai.com")
+### Reverse Proxy (already handled by K8s ingress)
+`https://zephyrtrustai.com/api/*` → FastAPI backend (port 8001) is managed by the Kubernetes ingress. **Do not add a second proxy.**
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=_allowed_origins,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-```
-
-### Always-Required Allowed Origins
-The following origins **must always be present** in `_allowed_origins`. Never remove any of them:
-1. `FRONTEND_URL` (dynamic — from env var)
-2. Its counterpart domain (preview ↔ `.emergent.host`, derived automatically)
-3. `https://zephyrtrustai.com` — custom production domain
-4. `https://www.zephyrtrustai.com` — custom production domain (www)
+### CORS `_allowed_origins` (server.py lines 24–51)
+The derivation loop runs over **both** `FRONTEND_URL` and `EMERGENT_ORIGIN`, so all four origins are always present:
+1. `https://zephyrtrustai.com` (FRONTEND_URL)
+2. `https://www.zephyrtrustai.com` (explicit static)
+3. `https://compliance-hub-demo.preview.emergentagent.com` (EMERGENT_ORIGIN)
+4. `https://compliance-hub-demo.emergent.host` (auto-derived from EMERGENT_ORIGIN)
 
 ### Rules
-1. **Never replace `_allowed_origins` with a single-item list** — login will break on production.
-2. **Never hardcode** `https://compliance-hub-demo.emergent.host` or the preview URL — the
-   derivation logic handles all app names automatically.
-3. **Never use `allow_origins=["*"]`** — incompatible with `allow_credentials=True` and
-   insecure for a compliance platform.
-4. If `FRONTEND_URL` is updated in `.env` (e.g., to a custom domain), the derivation block
-   will fall through cleanly and only that one origin will be allowed — this is correct
-   behaviour for custom domains.
+1. **Never set `REACT_APP_BACKEND_URL` to an Emergent subdomain** — breaks same-origin cookie storage on the custom domain.
+2. **Never remove `EMERGENT_ORIGIN` from `backend/.env`** — the Emergent preview URL must stay in CORS for platform testing tools.
+3. **Never use `allow_origins=["*"]`** — incompatible with `allow_credentials=True`.
+4. **Never set cookies without `SameSite=none; Secure`** — required for the `zephyrtrustai.com` ↔ API pairing to work across potential subdomains.
 
-### Verification
-After any CORS-touching change, run this check against the live production domain:
+### Verification (run after any CORS/auth change)
 ```bash
-curl -s -D - -X POST "https://<app>.emergent.host/api/auth/login" \
+# Health
+curl -s https://zephyrtrustai.com/api/health
+# Expected: {"status":"ok","service":"ZephyrWealth API","version":"3.0.0"}
+
+# CORS — custom domain
+curl -si -X OPTIONS https://zephyrtrustai.com/api/health \
+  -H "Origin: https://zephyrtrustai.com" \
+  -H "Access-Control-Request-Method: GET" | grep access-control
+# Expected: access-control-allow-origin: https://zephyrtrustai.com
+#           access-control-allow-credentials: true
+
+# CORS — Emergent preview (must not be broken)
+curl -si -X OPTIONS https://zephyrtrustai.com/api/health \
+  -H "Origin: https://compliance-hub-demo.preview.emergentagent.com" \
+  -H "Access-Control-Request-Method: GET" | grep access-control
+# Expected: access-control-allow-origin: https://compliance-hub-demo.preview.emergentagent.com
+#           access-control-allow-credentials: true
+
+# Login + cookie issuance
+curl -sc /tmp/c https://zephyrtrustai.com/api/auth/login \
   -H "Content-Type: application/json" \
-  -H "Origin: https://<app>.emergent.host" \
-  -d '{"email":"compliance@zephyrwealth.ai","password":"Comply1234!"}' \
-  | grep -i "access-control-allow-origin"
-# Expected: access-control-allow-origin: https://<app>.emergent.host
+  -d '{"email":"compliance@zephyrwealth.ai","password":"Comply1234!"}'
+# Expected: 200 with Set-Cookie: access_token=...; SameSite=none; Secure
+
+# Demo Reset (end-to-end auth check)
+TOKEN=$(grep access_token /tmp/c | awk '{print $NF}')
+curl -s -X POST https://zephyrtrustai.com/api/admin/demo-reset --cookie "access_token=$TOKEN"
+# Expected: {"message":"Demo data reset successful..."}
 ```
 
 ## Prioritized Backlog
