@@ -57,3 +57,7 @@ Thumbs.db
 /uploads/
 *.pdf
 
+-e 
+# Environment files
+*.env
+*.env.*
