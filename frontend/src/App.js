@@ -2,6 +2,7 @@ import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster } from 'sonner';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { InvestorAuthProvider, useInvestorAuth } from './context/InvestorAuthContext';
 import Layout from './components/Layout';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
@@ -17,6 +18,16 @@ import Agents from './pages/Agents';
 import AgentDetail from './pages/AgentDetail';
 import CapitalCalls from './pages/CapitalCalls';
 import CapitalCallDetail from './pages/CapitalCallDetail';
+
+// Portal pages
+import PortalLogin from './pages/portal/PortalLogin';
+import PortalChangePassword from './pages/portal/PortalChangePassword';
+import PortalLayout from './pages/portal/PortalLayout';
+import PortalDashboard from './pages/portal/PortalDashboard';
+import PortalInvestment from './pages/portal/PortalInvestment';
+import PortalCapitalCalls from './pages/portal/PortalCapitalCalls';
+import PortalDocuments from './pages/portal/PortalDocuments';
+import PortalProfile from './pages/portal/PortalProfile';
 
 function LoadingScreen() {
   return (
@@ -36,6 +47,7 @@ function LoadingScreen() {
   );
 }
 
+// ─── Back-office guards ───────────────────────────────────────────────────────
 function ProtectedRoute({ children }) {
   const { user, loading } = useAuth();
   if (loading) return <LoadingScreen />;
@@ -50,9 +62,32 @@ function PublicRoute({ children }) {
   return children;
 }
 
+// ─── Investor portal guards ───────────────────────────────────────────────────
+function PortalProtectedRoute({ children }) {
+  const { investor, loading } = useInvestorAuth();
+  if (loading) return <LoadingScreen />;
+  if (!investor) return <Navigate to="/portal/login" replace />;
+  // Force password change on first login
+  if (investor.first_login && window.location.pathname !== '/portal/change-password') {
+    return <Navigate to="/portal/change-password" replace />;
+  }
+  return children;
+}
+
+function PortalPublicRoute({ children }) {
+  const { investor, loading } = useInvestorAuth();
+  if (loading) return <LoadingScreen />;
+  if (investor) {
+    if (investor.first_login) return <Navigate to="/portal/change-password" replace />;
+    return <Navigate to="/portal/dashboard" replace />;
+  }
+  return children;
+}
+
 function AppRoutes() {
   return (
     <Routes>
+      {/* ── Back-office routes ─────────────────────────────────────────────── */}
       <Route
         path="/login"
         element={
@@ -84,6 +119,40 @@ function AppRoutes() {
         <Route path="reports" element={<Reports />} />
         <Route path="settings" element={<Settings />} />
       </Route>
+
+      {/* ── Investor Portal routes ─────────────────────────────────────────── */}
+      <Route
+        path="/portal/login"
+        element={
+          <PortalPublicRoute>
+            <PortalLogin />
+          </PortalPublicRoute>
+        }
+      />
+      <Route
+        path="/portal/change-password"
+        element={
+          <PortalProtectedRoute>
+            <PortalChangePassword />
+          </PortalProtectedRoute>
+        }
+      />
+      <Route
+        path="/portal"
+        element={
+          <PortalProtectedRoute>
+            <PortalLayout />
+          </PortalProtectedRoute>
+        }
+      >
+        <Route index element={<Navigate to="/portal/dashboard" replace />} />
+        <Route path="dashboard" element={<PortalDashboard />} />
+        <Route path="investment" element={<PortalInvestment />} />
+        <Route path="capital-calls" element={<PortalCapitalCalls />} />
+        <Route path="documents" element={<PortalDocuments />} />
+        <Route path="profile" element={<PortalProfile />} />
+      </Route>
+
       <Route path="*" element={<Navigate to="/dashboard" replace />} />
     </Routes>
   );
@@ -92,10 +161,12 @@ function AppRoutes() {
 export default function App() {
   return (
     <AuthProvider>
-      <BrowserRouter>
-        <AppRoutes />
-        <Toaster position="bottom-right" richColors closeButton />
-      </BrowserRouter>
+      <InvestorAuthProvider>
+        <BrowserRouter>
+          <AppRoutes />
+          <Toaster position="bottom-right" richColors closeButton />
+        </BrowserRouter>
+      </InvestorAuthProvider>
     </AuthProvider>
   );
 }

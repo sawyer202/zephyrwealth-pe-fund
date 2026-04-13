@@ -13,11 +13,19 @@ const ACTION_LABELS = {
   investor_created: 'Investor Created',
   investor_approved: 'Investor Approved',
   investor_rejected: 'Investor Rejected',
+  investor_flagged: 'Investor Flagged',
   investor_more_info_requested: 'More Info Requested',
   investor_decision: 'Investor Decision',
   deal_created: 'Deal Created',
   deal_stage_moved: 'Stage Advanced',
   deal_executed: 'Transaction Executed',
+  mandate_exception_override: 'Mandate Exception Override',
+  capital_call_issued: 'Capital Call Issued',
+  capital_call_received: 'Capital Call Received',
+  distribution_issued: 'Distribution Issued',
+  tav_report_generated: 'TAV Report Generated',
+  demo_reset: 'Demo Reset',
+  portal_account_created: 'Portal Account Created',
 };
 
 const ACTION_COLORS = {
@@ -25,11 +33,19 @@ const ACTION_COLORS = {
   investor_created: '#00A8C6',
   investor_approved: '#10B981',
   investor_rejected: '#EF4444',
+  investor_flagged: '#F59E0B',
   investor_more_info_requested: '#F59E0B',
   investor_decision: '#00A8C6',
   deal_created: '#00A8C6',
   deal_stage_moved: '#1B3A6B',
   deal_executed: '#10B981',
+  mandate_exception_override: '#F59E0B',
+  capital_call_issued: '#1B3A6B',
+  capital_call_received: '#10B981',
+  distribution_issued: '#15803D',
+  tav_report_generated: '#1B3A6B',
+  demo_reset: '#EF4444',
+  portal_account_created: '#00A8C6',
 };
 
 const ROLE_COLORS = {
@@ -284,6 +300,36 @@ export default function Reports() {
           >
             <RotateCcw size={14} /> Demo Reset
           </button>
+        </div>
+      </div>
+
+      {/* ── Pre-Generated Reports ────────────────────────────────────────────── */}
+      <div className="mb-6">
+        <p className="text-xs font-semibold text-[#6B7280] uppercase tracking-wider mb-3">Pre-Generated Reports</p>
+        <div className="bg-white border border-[#E5E7EB] rounded-sm shadow-sm">
+          <div className="flex items-center justify-between px-5 py-4 border-b border-[#E5E7EB]">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 bg-[#1B3A6B]/10 rounded-sm flex items-center justify-center flex-shrink-0">
+                <BarChart3 size={18} color="#1B3A6B" />
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-[#1F2937]">Q1 2026 — Total Asset Value Report</p>
+                <p className="text-xs text-[#6B7280] mt-0.5">Period: Q1 2026 &nbsp;·&nbsp; Generated: Mar 31, 2026 &nbsp;·&nbsp; By: Sarah Chen, Compliance Officer</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-3">
+              <span className="px-2 py-0.5 text-xs font-semibold rounded-sm bg-[#10B981]/10 text-[#10B981] border border-[#10B981]/20">
+                Generated
+              </span>
+              <button
+                onClick={() => { setShowTAV(true); setTavFrom('2026-01-01'); setTavTo('2026-03-31'); setTavError(''); }}
+                data-testid="tav-history-download-btn"
+                className="flex items-center gap-1.5 text-xs font-semibold text-[#1B3A6B] border border-[#1B3A6B]/20 px-3 py-1.5 rounded-sm hover:bg-[#1B3A6B]/5 transition-colors"
+              >
+                <Download size={13} /> Download PDF
+              </button>
+            </div>
+          </div>
         </div>
       </div>
 

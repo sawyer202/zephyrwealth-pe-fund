@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft, FileText, Download, Loader2, CheckCircle2,
   AlertTriangle, XCircle, RefreshCw, Shield, User, Building2,
-  Phone, Mail, MapPin, DollarSign, Briefcase, Clock,
+  Phone, Mail, MapPin, DollarSign, Briefcase, Clock, Globe, X, KeyRound,
 } from 'lucide-react';
 import RiskBadge from '../components/RiskBadge';
 import { useAuth } from '../context/AuthContext';
@@ -94,6 +94,102 @@ function IndicatorRow({ label, value }) {
   );
 }
 
+// ─── Create Portal Access Modal ──────────────────────────────────────────────
+function CreatePortalModal({ investorId, onClose, onSuccess }) {
+  const [email, setEmail] = useState('');
+  const [tempPwd, setTempPwd] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError('');
+    setLoading(true);
+    try {
+      const res = await fetch(`${API}/api/portal/admin/create-account`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ investor_id: investorId, email, temp_password: tempPwd }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || 'Failed to create portal account');
+      onSuccess(email);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" data-testid="create-portal-modal">
+      <div className="bg-white rounded-sm shadow-xl w-full max-w-md">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-[#E5E7EB]">
+          <div className="flex items-center gap-2">
+            <Globe size={16} color="#00A8C6" />
+            <h2 className="text-base font-semibold text-[#1F2937]">Create Investor Portal Access</h2>
+          </div>
+          <button onClick={onClose} className="text-[#9CA3AF] hover:text-[#374151]"><X size={18} /></button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="px-6 py-5 space-y-4">
+          <p className="text-sm text-[#6B7280]">
+            Create a portal login for this investor. They will be prompted to change their password on first login.
+          </p>
+          <div>
+            <label className="block text-xs font-semibold text-[#6B7280] uppercase tracking-wider mb-1.5">Investor Email</label>
+            <input
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              required
+              placeholder="investor@example.com"
+              data-testid="portal-email-field"
+              className="w-full px-3 py-2 text-sm border border-[#E5E7EB] rounded-sm outline-none focus:border-[#00A8C6] focus:ring-1 focus:ring-[#00A8C6]/20"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-[#6B7280] uppercase tracking-wider mb-1.5">Temporary Password</label>
+            <div className="relative">
+              <input
+                type="text"
+                value={tempPwd}
+                onChange={(e) => setTempPwd(e.target.value)}
+                required
+                placeholder="e.g. Invest1234!"
+                data-testid="portal-temp-pwd-field"
+                className="w-full px-3 py-2 text-sm border border-[#E5E7EB] rounded-sm outline-none focus:border-[#00A8C6] focus:ring-1 focus:ring-[#00A8C6]/20 font-mono"
+              />
+            </div>
+            <p className="text-xs text-[#9CA3AF] mt-1">Min 8 chars, 1 uppercase, 1 number. Investor must change on first login.</p>
+          </div>
+          {error && (
+            <div className="p-3 bg-red-50 border border-red-200 rounded-sm text-sm text-red-600" data-testid="portal-create-error">
+              {error}
+            </div>
+          )}
+          <div className="flex items-center justify-end gap-3 pt-2">
+            <button type="button" onClick={onClose} className="px-4 py-2 text-sm text-[#374151] bg-white border border-[#E5E7EB] rounded-sm hover:bg-[#F9FAFB]">
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={loading}
+              data-testid="portal-create-submit"
+              className="flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white rounded-sm transition-colors disabled:opacity-60"
+              style={{ backgroundColor: '#00A8C6' }}
+            >
+              {loading ? <Loader2 size={14} className="animate-spin" /> : <Globe size={14} />}
+              Create Portal Access
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 export default function InvestorDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -112,6 +208,9 @@ export default function InvestorDetail() {
   const [allDeals, setAllDeals] = useState([]);
   const [fpForm, setFpForm] = useState({ share_class: 'A', committed_capital: '', placement_agent_id: '', deal_associations: [] });
   const [fpSaving, setFpSaving] = useState(false);
+  // Portal access state
+  const [portalStatus, setPortalStatus] = useState(null); // null=loading, {has_account, email}
+  const [showPortalModal, setShowPortalModal] = useState(false);
 
   const handleExportKYCPDF = async () => {
     try {
@@ -130,6 +229,15 @@ export default function InvestorDetail() {
       setError(e.message);
     }
   };
+
+  // Check portal account status (compliance only)
+  useEffect(() => {
+    if (!canDecide) return;
+    fetch(`${API}/api/portal/admin/account-status/${id}`, { credentials: 'include' })
+      .then((r) => r.ok ? r.json() : null)
+      .then(setPortalStatus)
+      .catch(() => setPortalStatus({ has_account: false }));
+  }, [id, canDecide]);
 
   const fetchAll = useCallback(async () => {
     setLoading(true);
@@ -310,6 +418,30 @@ export default function InvestorDetail() {
             >
               <Download size={14} /> Export KYC Pack
             </button>
+          )}
+          {/* Portal Access button (compliance only) */}
+          {canDecide && portalStatus && (
+            portalStatus.has_account ? (
+              <div
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-sm border"
+                style={{ backgroundColor: '#F0FDF4', color: '#15803D', borderColor: '#BBF7D0' }}
+                data-testid="portal-access-active-badge"
+                title={`Portal: ${portalStatus.email}`}
+              >
+                <Globe size={13} /> Portal Access Active
+              </div>
+            ) : (
+              <button
+                onClick={() => setShowPortalModal(true)}
+                data-testid="create-portal-access-btn"
+                className="flex items-center gap-2 px-3 py-1.5 text-xs font-semibold border rounded-sm transition-colors"
+                style={{ color: '#00A8C6', borderColor: '#00A8C640' }}
+                onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#00A8C610'; }}
+                onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; }}
+              >
+                <Globe size={13} /> Create Portal Access
+              </button>
+            )
           )}
           <button onClick={fetchAll} className="text-sm text-[#6B7280] hover:text-[#1B3A6B] flex items-center gap-1.5 transition-colors mt-1" data-testid="refresh-btn">
             <RefreshCw size={14} /> Refresh
@@ -724,6 +856,19 @@ export default function InvestorDetail() {
           )}
         </div>
       </div>
+
+      {/* Create Portal Access Modal */}
+      {showPortalModal && (
+        <CreatePortalModal
+          investorId={id}
+          onClose={() => setShowPortalModal(false)}
+          onSuccess={(email) => {
+            setPortalStatus({ has_account: true, email });
+            setShowPortalModal(false);
+            setDecisionSuccess(`Portal access created for ${email}`);
+          }}
+        />
+      )}
     </div>
   );
 }
