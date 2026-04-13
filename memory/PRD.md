@@ -1,216 +1,200 @@
-# ZephyrWealth.ai — PRD
+# ZephyrWealth.ai — PRD & Architecture Reference
 
-## Original Problem Statement
-Building ZephyrWealth.ai — a professional back-office platform for a licensed Bahamian Private Equity fund. Target users: Compliance Officers, Risk Officers, and Fund Managers.
-
-## Architecture
-```
-/app/
-├── backend/
-│   ├── server.py          # App init, CORS, startup, router registration (63 lines)
-│   ├── database.py        # MongoDB connection + DOCUMENTS_DIR
-│   ├── models.py          # All shared Pydantic models
-│   ├── utils.py           # JWT, password, get_current_user, deal helpers
-│   ├── pdf_utils.py       # ReportLab PDF helpers, _build_notice_pdf
-│   ├── seed.py            # Idempotent seed functions (Phase 1-5)
-│   ├── requirements.txt
-│   ├── .env
-│   └── routes/
-│       ├── __init__.py
-│       ├── auth.py         # /api/auth/*
-│       ├── dashboard.py    # /api/dashboard/*
-│       ├── investors.py    # /api/investors/*
-│       ├── deals.py        # /api/deals/*
-│       ├── reports.py      # /api/audit-logs, /api/reports/tav-pdf
-│       ├── portfolio.py    # /api/portfolio/*
-│       ├── capital_calls.py # /api/capital-calls/*
-│       ├── agents.py       # /api/agents/*
-│       ├── trailer_fees.py  # /api/trailer-fees/*
-│       └── admin.py        # /api/admin/*
-├── frontend/
-│   ├── .env
-│   ├── package.json
-│   ├── tailwind.config.js
-│   └── src/
-│       ├── App.js
-│       ├── components/
-│       │   ├── Layout.js
-│       │   ├── Sidebar.js
-│       │   └── QueueTable.js
-│       └── pages/
-│           ├── Dashboard.js
-│           ├── Deals.js
-│           ├── DealDetail.js
-│           ├── Investors.js
-│           ├── InvestorDetail.js
-│           ├── InvestorOnboarding.js
-│           ├── Login.js
-│           └── Reports.js
-└── memory/
-    ├── PRD.md
-    └── test_credentials.md
-```
-
-## Tech Stack
-- **Frontend**: React, Tailwind CSS, Shadcn UI, Recharts, Sonner (Toasts)
-- **Backend**: FastAPI (modular APIRouter), Python, ReportLab (PDF)
-- **Database**: MongoDB (Motor async)
-- **Auth**: JWT (Secure Cookies, COOKIE_SECURE=true)
-- **AI**: Emergent Universal Key (Claude Sonnet for KYC Scorecards)
-
-## DB Schema
-- `users`: {_id, email, password_hash, role, name, title, created_at}
-- `investors`: {_id, legal_name, entity_type, kyc_status, risk_rating, share_class, committed_capital, capital_called, placement_agent_id, deal_associations, ...}
-- `documents`: {_id, entity_id, document_type, file_path, file_name, file_size}
-- `compliance_scorecards`: {_id, entity_id, entity_type, scorecard_data, recommendation}
-- `deals`: {_id, company_name, sector, geography, expected_irr, entry_valuation, entity_type, pipeline_stage, mandate_status}
-- `fund_mandate`: {_id, fund_name, allowed_sectors[], allowed_geographies[], irr_min, irr_max}
-- `audit_logs`: {_id, user_id, user_email, user_role, user_name, action, target_id, target_type, timestamp, notes}
-- `fund_profile`: {_id, fund_name, license_number, fund_manager, mandate}
-- `placement_agents`: {_id, agent_name, company_name, email, bank_name, bank_account_number, swift_code, vat_registered}
-- `capital_calls`: {_id, call_name, call_type, target_classes, call_percentage, status, line_items[]}
-- `trailer_fee_invoices`: {_id, agent_id, period_year, line_items[], subtotal, vat_applicable, total_due, status}
-
-## What's Been Implemented
-
-### Phase 1 (Complete)
-- Security Setup, JWT Authentication + Role System (compliance/risk/manager)
-- Executive Dashboard shell
-
-### Phase 2 (Complete)
-- Investor Onboarding (KYC) flow with full document upload
-- AI Compliance Scorecard (Claude Sonnet via Emergent Universal Key)
-- Local file storage (/documents)
-
-### Phase 3 (Complete)
-- Deal Pipeline Kanban with mandate checking
-- Dashboard Charts (Recharts)
-- Role-Based UI visibility toggling
-
-### Phase 4 (Complete)
-- PDF exports: Deal IC Pack, Investor KYC Pack, TAV Regulatory Report
-- Audit Logs viewer with filtering and CSV export
-- Demo Seed Data (idempotent) + Demo Reset button (compliance only)
-
-### Phase 5 (Complete)
-- Portfolio Analytics (/portfolio) page
-- Capital Calls engine (fund-level + deal-specific)
-- Trailer Fee Automation with PDF invoices
-- Placement Agents management
-- Fund Participation (share class, committed capital)
-
-### Backend Refactor (Complete — 2026-02-xx)
-- Monolithic server.py (2,747 lines) → modular architecture
-- server.py reduced to 63 lines
-- 10 route files, 5 shared modules (database.py, models.py, utils.py, pdf_utils.py, seed.py)
-- 38/38 regression tests pass, zero breaking changes
-
-### Deployment Fixes (Complete — 2026-04-05)
-- **`requirements.txt` cleaned**: removed embedded pip output (lines 9–12), added
-  `--extra-index-url https://d33sy5i8bnduwe.cloudfront.net/simple/` for `emergentintegrations`,
-  added `python-multipart` (required for FastAPI `UploadFile` / form handling)
-- **`/health` route added**: FastAPI now responds to both `GET /health` (Kubernetes pod probe,
-  no `/api` prefix) and `GET /api/health` (application-level check)
-- **Dual-domain CORS fix** (see critical section below)
-
-### Same-Origin Cookie Fix (Complete — 2026-04-06)
-- **Problem**: `REACT_APP_BACKEND_URL` was set to the Emergent preview URL
-  (`compliance-hub-demo.preview.emergentagent.com`). When the user accessed the app via the
-  custom domain `zephyrtrustai.com`, the browser treated all API calls as **cross-origin** and
-  blocked the `Set-Cookie` response headers under third-party cookie deprecation policies
-  (Chrome 2026+). Login appeared to succeed (response body returned user data) but the cookie
-  was never stored → Demo Reset and all protected endpoints returned `401 Not authenticated`.
-- **Fix**: Changed `REACT_APP_BACKEND_URL=https://zephyrtrustai.com` so the React app makes
-  API calls to the **same domain** as the page. The Kubernetes ingress already routes
-  `zephyrtrustai.com/api/*` → FastAPI backend (port 8001). No new proxy configuration required.
-- **FRONTEND_URL**: Updated to `https://zephyrtrustai.com` in `backend/.env`.
-- **EMERGENT_ORIGIN**: Added `https://compliance-hub-demo.preview.emergentagent.com` as a
-  separate env var in `backend/.env` to keep the Emergent preview/host URLs in the CORS
-  allowlist. The `server.py` derivation loop now iterates both `FRONTEND_URL` and
-  `EMERGENT_ORIGIN` so neither is ever dropped from `_allowed_origins`.
-- **Reverse proxy**: The K8s ingress was already handling `zephyrtrustai.com/api/*` → port 8001.
-  Verified via curl: `GET /api/health` → `{"status":"ok"}` ✅, login ✅, demo-reset ✅.
+## Problem Statement
+Building ZephyrWealth.ai — a professional back-office platform for a licensed Bahamian Private Equity fund. Target users are Compliance Officers, Risk Officers, and Fund Managers. **Phase 6** adds a completely separate investor-facing portal accessible at `/portal/*`.
 
 ---
 
-## ⚠️ CRITICAL — Domain & Cookie Configuration
+## Architecture
 
-> **Any future change to `server.py` CORS config or `.env` files MUST preserve this logic.**
+**Stack:** React + FastAPI + Local MongoDB  
+**URL:** `https://compliance-hub-demo.preview.emergentagent.com`
 
-### Env Vars (backend/.env)
-| Variable | Current Value | Purpose |
-|---|---|---|
-| `FRONTEND_URL` | `https://zephyrtrustai.com` | Primary CORS origin; also used as same-origin API target |
-| `EMERGENT_ORIGIN` | `https://compliance-hub-demo.preview.emergentagent.com` | Keeps Emergent preview + `.emergent.host` URLs in CORS allowlist |
-
-### Env Vars (frontend/.env)
-| Variable | Current Value | Purpose |
-|---|---|---|
-| `REACT_APP_BACKEND_URL` | `https://zephyrtrustai.com` | All browser API calls go here — must match the page's domain |
-
-### Why REACT_APP_BACKEND_URL = https://zephyrtrustai.com
-When `REACT_APP_BACKEND_URL` pointed to `compliance-hub-demo.preview.emergentagent.com` and the user accessed the app via `zephyrtrustai.com`, the browser blocked the `Set-Cookie` response from the cross-origin API domain (Chrome third-party cookie deprecation, 2026). Setting it to `zephyrtrustai.com` makes all API calls **same-origin** so cookies are always stored and sent without restrictions.
-
-### Reverse Proxy (already handled by K8s ingress)
-`https://zephyrtrustai.com/api/*` → FastAPI backend (port 8001) is managed by the Kubernetes ingress. **Do not add a second proxy.**
-
-### CORS `_allowed_origins` (server.py lines 24–51)
-The derivation loop runs over **both** `FRONTEND_URL` and `EMERGENT_ORIGIN`, so all four origins are always present:
-1. `https://zephyrtrustai.com` (FRONTEND_URL)
-2. `https://www.zephyrtrustai.com` (explicit static)
-3. `https://compliance-hub-demo.preview.emergentagent.com` (EMERGENT_ORIGIN)
-4. `https://compliance-hub-demo.emergent.host` (auto-derived from EMERGENT_ORIGIN)
-
-### Rules
-1. **Never set `REACT_APP_BACKEND_URL` to an Emergent subdomain** — breaks same-origin cookie storage on the custom domain.
-2. **Never remove `EMERGENT_ORIGIN` from `backend/.env`** — the Emergent preview URL must stay in CORS for platform testing tools.
-3. **Never use `allow_origins=["*"]`** — incompatible with `allow_credentials=True`.
-4. **Cookies use `SameSite=lax; Secure`** — the app is now fully same-origin on `zephyrtrustai.com` (frontend and API share the same domain via K8s ingress). `lax` is stricter and more secure than `none`; it blocks cross-site cookie sending by default. Do NOT revert to `samesite="none"` unless the app moves back to a cross-origin API setup.
-
-### Verification (run after any CORS/auth change)
-```bash
-# Health
-curl -s https://zephyrtrustai.com/api/health
-# Expected: {"status":"ok","service":"ZephyrWealth API","version":"3.0.0"}
-
-# CORS — custom domain
-curl -si -X OPTIONS https://zephyrtrustai.com/api/health \
-  -H "Origin: https://zephyrtrustai.com" \
-  -H "Access-Control-Request-Method: GET" | grep access-control
-# Expected: access-control-allow-origin: https://zephyrtrustai.com
-#           access-control-allow-credentials: true
-
-# CORS — Emergent preview (must not be broken)
-curl -si -X OPTIONS https://zephyrtrustai.com/api/health \
-  -H "Origin: https://compliance-hub-demo.preview.emergentagent.com" \
-  -H "Access-Control-Request-Method: GET" | grep access-control
-# Expected: access-control-allow-origin: https://compliance-hub-demo.preview.emergentagent.com
-#           access-control-allow-credentials: true
-
-# Login + cookie issuance
-curl -sc /tmp/c https://zephyrtrustai.com/api/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{"email":"compliance@zephyrwealth.ai","password":"Comply1234!"}'
-# Expected: 200 with Set-Cookie: access_token=...; SameSite=none; Secure
-
-# Demo Reset (end-to-end auth check)
-TOKEN=$(grep access_token /tmp/c | awk '{print $NF}')
-curl -s -X POST https://zephyrtrustai.com/api/admin/demo-reset --cookie "access_token=$TOKEN"
-# Expected: {"message":"Demo data reset successful..."}
+```
+/app/
+├── backend/
+│   ├── .env                     (JWT_SECRET, INVESTOR_JWT_SECRET, MONGO_URL, DB_NAME, ANTHROPIC_API_KEY, etc.)
+│   ├── requirements.txt
+│   ├── server.py                (FastAPI entry-point, CORS, routers, startup seed)
+│   ├── database.py              (Motor MongoDB client)
+│   ├── models.py                (Pydantic models)
+│   ├── seed.py                  (Idempotent seed: investors, deals, capital calls, audit logs, portal users)
+│   └── routes/
+│       ├── auth.py              (Back-office login/logout/me — access_token cookie)
+│       ├── investors.py         (CRUD investors, KYC PDF export)
+│       ├── deals.py             (CRUD deals, IC Pack PDF export)
+│       ├── capital_calls.py     (CRUD capital calls, notice PDF)
+│       ├── reports.py           (TAV report PDF)
+│       ├── audit.py             (Audit log CRUD)
+│       ├── agents.py            (Placement agents)
+│       ├── portfolio.py         (Portfolio summary)
+│       ├── compliance.py        (Compliance scorecard AI)
+│       ├── admin.py             (Demo reset — clears + re-seeds all data)
+│       ├── portal_auth.py       (Investor portal login/logout/me/change-password — investor_token cookie)
+│       └── portal.py            (Portal: dashboard, investment, capital-calls, documents, profile)
+├── frontend/
+│   ├── .env                     (REACT_APP_BACKEND_URL)
+│   ├── package.json
+│   ├── tailwind.config.js
+│   └── src/
+│       ├── App.js               (All routes — back-office + portal)
+│       ├── context/
+│       │   ├── AuthContext.js           (Back-office auth — access_token)
+│       │   └── InvestorAuthContext.js   (Investor portal auth — investor_token, INDEPENDENT)
+│       ├── components/
+│       │   ├── Layout.js, Sidebar.js, QueueTable.js, RiskBadge.js
+│       └── pages/
+│           ├── Login.js, Dashboard.js, Investors.js, InvestorOnboarding.js
+│           ├── InvestorDetail.js    (+ Create Portal Access button/badge — compliance only)
+│           ├── Deals.js, DealDetail.js, Portfolio.js, Reports.js
+│           ├── Settings.js, Agents.js, AgentDetail.js, CapitalCalls.js, CapitalCallDetail.js
+│           └── portal/
+│               ├── PortalLogin.js          (/portal/login — split layout)
+│               ├── PortalChangePassword.js (/portal/change-password — forced on first login)
+│               ├── PortalLayout.js         (Top nav layout, no sidebar)
+│               ├── PortalDashboard.js      (/portal/dashboard)
+│               ├── PortalInvestment.js     (/portal/investment)
+│               ├── PortalCapitalCalls.js   (/portal/capital-calls + detail modal)
+│               ├── PortalDocuments.js      (/portal/documents + filter tabs)
+│               └── PortalProfile.js        (/portal/profile + change password modal)
+└── memory/
+    ├── PRD.md
+    ├── test_credentials.md
+    └── CHANGELOG.md
 ```
 
-## Prioritized Backlog
+---
+
+## Design System
+
+| Token | Value |
+|---|---|
+| Sidebar bg | `#111110` |
+| Sidebar text (active) | `#E8E8E4` |
+| Sidebar muted | `#5A5A56` |
+| Main bg | `#FAFAF8` |
+| Card bg | `#FFFFFF` |
+| Card border | `#E8E6E0` |
+| Primary text | `#0F0F0E` |
+| Secondary text | `#888880` |
+| Accent (logo only) | `#00A8C6` |
+| Risk Low | bg `#F0FDF4` / text `#15803D` |
+| Risk Medium | bg `#FFFBEB` / text `#92400E` |
+| Risk High | bg `#FEF2F2` / text `#991B1B` |
+
+---
+
+## Database Collections
+
+- `users` — `{_id, email, password_hash, role, name, created_at}`
+- `investors` — `{_id, entity_type, legal_name, status, nationality, risk_rating, share_class, committed_capital, ...}`
+- `investor_users` — `{_id, investor_id, email, password_hash, name, role: "investor", first_login, created_at, last_login}`
+- `documents` — `{_id, entity_id, document_type, file_path, file_name, file_size, uploaded_at}`
+- `compliance_scorecards` — `{_id, entity_id, scorecard_data, recommendation}`
+- `deals` — `{_id, company_name, sector, geography, expected_irr, entry_valuation, pipeline_stage, status}`
+- `capital_calls` — `{_id, call_name, deal_id, call_percentage, total_amount, issue_date, due_date, status, line_items[]}`
+- `distributions` — `{_id, deal_id, type, gross_amount, net_amount, issue_date, status, line_items[]}`
+- `fund_mandate` — `{_id, allowed_sectors[], allowed_geographies[], irr_min, irr_max}`
+- `fund_profile` — `{_id, fund_name, license_number, fund_manager, bank_name, account_number, swift, mandate}`
+- `audit_logs` — `{_id, user_email, user_role, user_name, action, target_id, target_type, timestamp, notes}`
+- `agents`, `trailer_fee_invoices`, etc.
+
+---
+
+## Key API Endpoints
+
+### Back-Office
+- `POST /api/auth/login` / `POST /api/auth/logout` / `GET /api/auth/me`
+- `GET/POST /api/investors`, `GET /api/investors/{id}/export-pdf`
+- `GET/POST /api/deals`, `GET /api/deals/{id}/export-pdf`
+- `GET/POST /api/capital-calls`, `GET /api/capital-calls/{id}/notice-pdf/{investor_id}`
+- `GET /api/audit-logs`
+- `GET /api/reports/tav-pdf`
+- `POST /api/admin/demo-reset`
+
+### Investor Portal
+- `POST /api/portal/auth/login` — sets `investor_token` HttpOnly cookie
+- `POST /api/portal/auth/logout` — clears `investor_token`
+- `GET /api/portal/auth/me`
+- `POST /api/portal/auth/change-password`
+- `POST /api/portal/admin/create-account` (compliance only)
+- `GET /api/portal/admin/account-status/{investor_id}` (compliance only)
+- `GET /api/portal/dashboard`
+- `GET /api/portal/investment`
+- `GET /api/portal/capital-calls`
+- `GET /api/portal/documents` / `GET /api/portal/documents/{id}/download` (403 on cross-investor)
+- `GET /api/portal/profile`
+
+---
+
+## Auth Architecture
+
+**Two completely independent auth systems:**
+
+| Property | Back-office | Investor Portal |
+|---|---|---|
+| Cookie name | `access_token` | `investor_token` |
+| JWT secret env | `JWT_SECRET` | `INVESTOR_JWT_SECRET` |
+| User collection | `users` | `investor_users` |
+| React context | `AuthContext.js` | `InvestorAuthContext.js` |
+| Login page | `/login` | `/portal/login` |
+
+**Both:** `SameSite=lax`, `HttpOnly`, `Secure` cookies.
+
+---
+
+## Completed Phases
+
+### Phase 1 — Auth + Dashboard Shell ✅
+- JWT role-based authentication (compliance, risk, manager)
+- Mobile-responsive layout with sidebar
+- Executive dashboard shell
+
+### Phase 2 — Investor KYC Flow ✅
+- Full investor onboarding form
+- AI Compliance Scorecard (Claude Sonnet via Emergent Universal Key)
+- Document upload and storage
+
+### Phase 3 — Deal Pipeline + Charts ✅
+- Kanban deal pipeline
+- Recharts dashboard charts
+- Role-based UI visibility
+
+### Phase 4 — PDF Reports + Audit Logs + Seed Data ✅
+- ReportLab PDF generation (IC Pack, KYC Pack, TAV Report)
+- Audit Logs viewer with filtering and CSV export
+- Demo Seed Data (idempotent)
+- Demo Reset button (compliance only, with confirmation modal + sonner toast)
+
+### Phase 5 — Backend Refactor + Auth Hardening ✅
+- Monolithic server.py split into modular routes/ directory
+- Cross-site cookie blocking fixed (same-origin setup)
+- SameSite=lax cookie hardening
+- Logout button in sidebar
+
+### Phase 6 — Investor Portal ✅ (Apr 2026)
+- Separate investor portal at /portal/* routes
+- Independent InvestorAuthContext.js (investor_token, INVESTOR_JWT_SECRET)
+- 6 portal pages: Login, ChangePassword, Dashboard, Investment, CapitalCalls, Documents, Profile
+- Strict document security: 403 on cross-investor document access
+- "Create Portal Access" button on InvestorDetail (compliance only)
+- "Portal Access Active" badge when account exists
+- 20 seeded audit log entries in Reports page
+- Pre-generated TAV Report entry in Reports page
+- Demo Reset updated to clear + re-seed investor_users and audit logs
+- **Test results: 42/42 backend, 19/19 frontend acceptance criteria**
+
+---
+
+## Backlog / Future Tasks
 
 ### P1 — Upcoming
-- Fund Manager deal creation improvement — better UX for managers adding deals
+- Preview Demo dry-run mode for Demo Reset (show how many records will be affected)
+- Fund Manager deal creation UX improvement
 
-### P2 — Near-term
-- Trailer Fee Dashboard on Agents page (total fees YTD, outstanding, collection rate)
-- Preview Demo dry-run for reset (shows counts of records affected before executing)
-
-### P3 — Future
-- shadcn DatePicker for Reports/TAV modal
-- Email notifications (SendGrid) for capital call notices
-- Bulk investor CSV import
-- Cloud document storage (S3)
-- Investor portal (read-only LP view)
+### P2 — Future
+- Trailer Fee Dashboard on Agents page
+- Email notifications (SendGrid) — capital call notices, document uploads
+- Cloud document storage (S3/GCS)
+- Multi-fund support
+- Two-factor authentication (TOTP)
