@@ -210,6 +210,46 @@ async def seed_demo_phase4():
     ])
 
 
+async def seed_portal_users():
+    """Phase 6 — idempotent. Creates investor_users for 2 seed investors."""
+    # Update fund_profile with bank details for payment instructions (if not present)
+    fp = await db.fund_profile.find_one({"fund_name": "Zephyr Caribbean Growth Fund I"})
+    if fp and not fp.get("bank_name"):
+        await db.fund_profile.update_one(
+            {"fund_name": "Zephyr Caribbean Growth Fund I"},
+            {"$set": {
+                "bank_name": "Bank of The Bahamas",
+                "bank_account_number": "4521-9900-0087",
+                "swift_code": "BAHABSNA",
+            }},
+        )
+
+    portal_accounts = [
+        ("Cayman Tech Ventures SPV Ltd", "investor1@caymantech.com"),
+        ("Marcus Harrington", "marcus.bajan@gmail.com"),
+    ]
+
+    for inv_name, portal_email in portal_accounts:
+        investor = await db.investors.find_one({
+            "$or": [{"legal_name": inv_name}, {"name": inv_name}]
+        })
+        if not investor:
+            continue
+        investor_id = str(investor["_id"])
+        if await db.investor_users.find_one({"investor_id": investor_id}):
+            continue  # idempotent
+        await db.investor_users.insert_one({
+            "investor_id": investor_id,
+            "email": portal_email,
+            "password_hash": hash_password("Invest1234!"),
+            "name": inv_name,
+            "role": "investor",
+            "first_login": True,
+            "created_at": datetime.now(timezone.utc),
+            "last_login": None,
+        })
+
+
 async def seed_demo_phase5():
     """Phase 5 idempotent demo seed. Guard: placement_agents count."""
     if await db.placement_agents.count_documents({}) > 0:

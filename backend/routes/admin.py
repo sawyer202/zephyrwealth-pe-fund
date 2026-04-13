@@ -85,18 +85,23 @@ async def demo_reset(current_user: dict = Depends(get_current_user)):
     await db.fund_profile.delete_one({"fund_name": "Zephyr Caribbean Growth Fund I"})
     cleaned["fund_profile_reset"] = True
 
-    # 7. Clear Phase 5 data
+    # 7. Clear Phase 5 data + portal accounts
     r5a = await db.placement_agents.delete_many({})
     r5b = await db.capital_calls.delete_many({})
     r5c = await db.trailer_fee_invoices.delete_many({})
+    r5d = await db.investor_users.delete_many({})
     cleaned["placement_agents_cleared"] = r5a.deleted_count
     cleaned["capital_calls_cleared"] = r5b.deleted_count
     cleaned["trailer_fee_invoices_cleared"] = r5c.deleted_count
+    cleaned["investor_users_cleared"] = r5d.deleted_count
 
-    # 8. Re-seed Phase 4 pristine data
+    # 8. Re-seed Phase 4 & 5 pristine data + portal accounts
     await seed_demo_phase4()
     await seed_demo_phase5()
+    from seed import seed_portal_users
+    await seed_portal_users()
     cleaned["seed_restored"] = True
+    cleaned["portal_users_reseeded"] = True
 
     # 9. Log the reset (in the freshly seeded audit log)
     await db.audit_logs.insert_one({

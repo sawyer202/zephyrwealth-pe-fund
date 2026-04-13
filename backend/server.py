@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from database import db, DOCUMENTS_DIR
-from seed import seed_users, seed_demo_data, seed_demo_phase4, seed_demo_phase5
+from seed import seed_users, seed_demo_data, seed_demo_phase4, seed_demo_phase5, seed_portal_users
 
 from routes.auth import router as auth_router
 from routes.dashboard import router as dashboard_router
@@ -18,6 +18,8 @@ from routes.capital_calls import router as capital_calls_router
 from routes.agents import router as agents_router
 from routes.trailer_fees import router as trailer_fees_router
 from routes.admin import router as admin_router
+from routes.portal_auth import router as portal_auth_router
+from routes.portal import router as portal_router
 
 app = FastAPI(title="ZephyrWealth API", version="3.0.0")
 
@@ -68,6 +70,8 @@ app.include_router(capital_calls_router)
 app.include_router(agents_router)
 app.include_router(trailer_fees_router)
 app.include_router(admin_router)
+app.include_router(portal_auth_router)
+app.include_router(portal_router)
 
 
 @app.on_event("startup")
@@ -83,7 +87,10 @@ async def startup():
     await seed_demo_data()
     await seed_demo_phase4()
     await seed_demo_phase5()
-    print("ZephyrWealth API v5 ready — modular architecture")
+    await seed_portal_users()
+    await db.investor_users.create_index("email", unique=True)
+    await db.investor_users.create_index("investor_id")
+    print("ZephyrWealth API v6 ready — Investor Portal enabled")
 
 
 @app.get("/health")
