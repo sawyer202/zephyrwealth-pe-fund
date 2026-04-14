@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 SENDGRID_API_KEY = os.environ.get("SENDGRID_API_KEY", "")
 FROM_EMAIL = os.environ.get("FROM_EMAIL", "noreply@zephyrtrustai.com")
 SANDBOX = os.environ.get("SENDGRID_SANDBOX", "false").lower() == "true"
-PORTAL_URL = "https://zephyrtrustai.com/portal/login"
+PORTAL_URL = os.environ.get("PORTAL_URL", "https://zephyrtrustai.com/portal/login")
 FUND_NAME = "Zephyr Caribbean Growth Fund I"
 
 
