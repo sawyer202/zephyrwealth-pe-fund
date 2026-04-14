@@ -9,3 +9,4 @@ pydantic==2.12.5
 python-multipart
 emergentintegrations
 reportlab==4.4.10
+sendgrid==6.12.5

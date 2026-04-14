@@ -186,6 +186,15 @@ Building ZephyrWealth.ai — a professional back-office platform for a licensed 
 
 ---
 
+### Phase 7 — Email Notifications (Apr 2026) ✅
+- `sendgrid==6.12.5` added to `requirements.txt`
+- `email_service.py` — reusable HTML email templates matching "Old Money Tech" brand
+- **Trigger 1:** Capital call issued → email all investors with portal accounts (sandbox mode for testing)
+- **Trigger 2:** Distribution line item marked paid → email that investor
+- All email failures are caught + logged — never blocks the main operation
+- `GET /api/distributions`, `POST /api/distributions`, `PATCH /api/distributions/{id}/line-items/{investor_id}` added
+- Required env vars: `SENDGRID_API_KEY`, `FROM_EMAIL`, `SENDGRID_SANDBOX` (set `false` in production)
+
 ## Backlog / Future Tasks
 
 ### P1 — Upcoming

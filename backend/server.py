@@ -20,6 +20,7 @@ from routes.trailer_fees import router as trailer_fees_router
 from routes.admin import router as admin_router
 from routes.portal_auth import router as portal_auth_router
 from routes.portal import router as portal_router
+from routes.distributions import router as distributions_router
 
 app = FastAPI(title="ZephyrWealth API", version="3.0.0")
 
@@ -72,6 +73,7 @@ app.include_router(trailer_fees_router)
 app.include_router(admin_router)
 app.include_router(portal_auth_router)
 app.include_router(portal_router)
+app.include_router(distributions_router)
 
 
 @app.on_event("startup")

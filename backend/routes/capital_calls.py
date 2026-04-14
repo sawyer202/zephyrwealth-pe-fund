@@ -1,6 +1,7 @@
 from datetime import datetime, timezone, timedelta
 from io import BytesIO
 import zipfile
+import asyncio
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
@@ -10,6 +11,7 @@ from database import db
 from utils import get_current_user
 from models import CapitalCallCreate, LineItemStatusUpdate
 from pdf_utils import _build_notice_pdf
+from email_service import notify_capital_call_issued
 
 router = APIRouter(tags=["capital-calls"])
 
@@ -96,6 +98,9 @@ async def issue_capital_call(call_id: str, current_user: dict = Depends(get_curr
                 pass
     await db.capital_calls.update_one({"_id": oid}, {"$set": {"status": "issued"}})
     await db.audit_logs.insert_one({"user_id": current_user.get("_id"), "user_email": current_user.get("email", ""), "user_role": current_user.get("role", ""), "user_name": current_user.get("name", ""), "action": "capital_call_issued", "target_id": call_id, "target_type": "capital_call", "timestamp": datetime.now(timezone.utc), "notes": f"Capital call issued: {call.get('call_name')} | Total: ${call.get('total_amount', 0):,.0f}"})
+    # Fire email notifications — non-blocking, never fails the main operation
+    updated_call = await db.capital_calls.find_one({"_id": oid})
+    asyncio.create_task(notify_capital_call_issued(db, updated_call or call))
     return {"message": "Capital call issued", "call_id": call_id}
 
 
