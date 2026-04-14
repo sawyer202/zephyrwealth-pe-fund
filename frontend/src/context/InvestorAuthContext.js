@@ -3,6 +3,7 @@ import axios from 'axios';
 
 const InvestorAuthContext = createContext(null);
 const API = process.env.REACT_APP_BACKEND_URL;
+const TOKEN_KEY = 'zw_investor_token';
 
 function formatApiError(detail) {
   if (detail == null) return 'Something went wrong. Please try again.';
@@ -16,13 +17,18 @@ function formatApiError(detail) {
   return String(detail);
 }
 
+function getInvestorAuthHeaders() {
+  const token = localStorage.getItem(TOKEN_KEY);
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
 export function InvestorAuthProvider({ children }) {
   const [investor, setInvestor] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     axios
-      .get(`${API}/api/portal/auth/me`, { withCredentials: true })
+      .get(`${API}/api/portal/auth/me`, { withCredentials: true, headers: getInvestorAuthHeaders() })
       .then((res) => setInvestor(res.data))
       .catch(() => setInvestor(false))
       .finally(() => setLoading(false));
@@ -35,6 +41,9 @@ export function InvestorAuthProvider({ children }) {
         { email, password },
         { withCredentials: true }
       );
+      if (data.investor_token) {
+        localStorage.setItem(TOKEN_KEY, data.investor_token);
+      }
       setInvestor(data);
       return data;
     } catch (e) {
@@ -45,8 +54,9 @@ export function InvestorAuthProvider({ children }) {
 
   const logout = async () => {
     try {
-      await axios.post(`${API}/api/portal/auth/logout`, {}, { withCredentials: true });
+      await axios.post(`${API}/api/portal/auth/logout`, {}, { withCredentials: true, headers: getInvestorAuthHeaders() });
     } finally {
+      localStorage.removeItem(TOKEN_KEY);
       setInvestor(false);
     }
   };
@@ -56,7 +66,7 @@ export function InvestorAuthProvider({ children }) {
       const { data } = await axios.post(
         `${API}/api/portal/auth/change-password`,
         { current_password, new_password },
-        { withCredentials: true }
+        { withCredentials: true, headers: getInvestorAuthHeaders() }
       );
       setInvestor((prev) => prev ? { ...prev, first_login: false } : prev);
       return data;
@@ -67,7 +77,7 @@ export function InvestorAuthProvider({ children }) {
   };
 
   return (
-    <InvestorAuthContext.Provider value={{ investor, loading, login, logout, changePassword, setInvestor }}>
+    <InvestorAuthContext.Provider value={{ investor, loading, login, logout, changePassword, setInvestor, getInvestorAuthHeaders }}>
       {children}
     </InvestorAuthContext.Provider>
   );

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Loader2, Bell, X, Download, CreditCard } from 'lucide-react';
+import { portalFetch } from '../../utils/authFetch';
 
 const API = process.env.REACT_APP_BACKEND_URL;
 
@@ -45,7 +46,7 @@ function CallDetailModal({ call, onClose }) {
   const downloadNotice = async () => {
     setDownloading(true);
     try {
-      const res = await fetch(`${API}/api/portal/capital-calls/${call.call_id}/notice-pdf`, { credentials: 'include' });
+      const res = await portalFetch(`${API}/api/portal/capital-calls/${call.call_id}/notice-pdf`);
       if (!res.ok) throw new Error('Download failed');
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
@@ -171,7 +172,7 @@ export default function PortalCapitalCalls() {
   const [selectedCall, setSelectedCall] = useState(null);
 
   useEffect(() => {
-    fetch(`${API}/api/portal/capital-calls`, { credentials: 'include' })
+    portalFetch(`${API}/api/portal/capital-calls`)
       .then((r) => {
         if (!r.ok) throw new Error('Failed to load capital calls');
         return r.json();

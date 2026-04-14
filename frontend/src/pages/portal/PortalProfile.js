@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { User, Building2, Eye, EyeOff, Loader2, CheckCircle2, X, KeyRound } from 'lucide-react';
 import { toast } from 'sonner';
 import { useInvestorAuth } from '../../context/InvestorAuthContext';
+import { portalFetch } from '../../utils/authFetch';
 
 const API = process.env.REACT_APP_BACKEND_URL;
 
@@ -139,7 +140,7 @@ export default function PortalProfile() {
   const [profileData, setProfileData] = useState(null);
 
   React.useEffect(() => {
-    fetch(`${API}/api/portal/profile`, { credentials: 'include' })
+    portalFetch(`${API}/api/portal/profile`)
       .then((r) => r.ok ? r.json() : null)
       .then(setProfileData)
       .catch(() => {});

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Loader2, Building2, User, TrendingUp, FileText } from 'lucide-react';
+import { portalFetch } from '../../utils/authFetch';
 
 const API = process.env.REACT_APP_BACKEND_URL;
 
@@ -63,7 +64,7 @@ export default function PortalInvestment() {
   const [error, setError] = useState('');
 
   useEffect(() => {
-    fetch(`${API}/api/portal/investment`, { credentials: 'include' })
+    portalFetch(`${API}/api/portal/investment`)
       .then((r) => {
         if (!r.ok) throw new Error('Failed to load investment data');
         return r.json();

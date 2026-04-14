@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Loader2, FolderOpen, Download, FileText } from 'lucide-react';
+import { portalFetch } from '../../utils/authFetch';
 
 const API = process.env.REACT_APP_BACKEND_URL;
 
@@ -43,7 +44,7 @@ export default function PortalDocuments() {
   const [downloading, setDownloading] = useState('');
 
   useEffect(() => {
-    fetch(`${API}/api/portal/documents`, { credentials: 'include' })
+    portalFetch(`${API}/api/portal/documents`)
       .then((r) => {
         if (!r.ok) throw new Error('Failed to load documents');
         return r.json();
@@ -56,7 +57,7 @@ export default function PortalDocuments() {
   const handleDownload = async (doc) => {
     setDownloading(doc.id);
     try {
-      const res = await fetch(`${API}/api/portal/documents/${doc.id}/download`, { credentials: 'include' });
+      const res = await portalFetch(`${API}/api/portal/documents/${doc.id}/download`);
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
         throw new Error(err.detail || 'Download failed');

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { DollarSign, TrendingUp, TrendingDown, Layers, Bell, ArrowRight, Loader2, FileText, Activity } from 'lucide-react';
 import { useInvestorAuth } from '../../context/InvestorAuthContext';
+import { portalFetch } from '../../utils/authFetch';
 
 const API = process.env.REACT_APP_BACKEND_URL;
 
@@ -61,7 +62,7 @@ export default function PortalDashboard() {
   const [error, setError] = useState('');
 
   useEffect(() => {
-    fetch(`${API}/api/portal/dashboard`, { credentials: 'include' })
+    portalFetch(`${API}/api/portal/dashboard`)
       .then((r) => {
         if (!r.ok) throw new Error('Failed to load dashboard data');
         return r.json();

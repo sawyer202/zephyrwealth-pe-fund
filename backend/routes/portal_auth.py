@@ -41,6 +41,10 @@ def create_investor_token(user_id: str, investor_id: str, email: str) -> str:
 async def get_current_investor(request: Request) -> dict:
     token = request.cookies.get("investor_token")
     if not token:
+        auth_header = request.headers.get("Authorization", "")
+        if auth_header.startswith("Bearer "):
+            token = auth_header[7:]
+    if not token:
         raise HTTPException(status_code=401, detail="Not authenticated")
     try:
         payload = jwt.decode(token, INVESTOR_JWT_SECRET, algorithms=[JWT_ALGORITHM])
@@ -108,6 +112,7 @@ async def portal_login(body: InvestorLoginRequest, response: Response):
         "name": user.get("name", ""),
         "role": "investor",
         "first_login": user.get("first_login", False),
+        "investor_token": token,
     }
 
 
