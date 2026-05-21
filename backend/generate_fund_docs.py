@@ -419,6 +419,7 @@ FUND_DOCS = [
         "category": "fund_prospectus",
         "version": "v3.2 — March 2026",
         "file_name": "ZephyrCGF1_Prospectus_v3.2.pdf",
+        "nda_required": True,
         "regulatory_note": (
             "Issued under the Investment Funds Act 2019. Filed with the "
             "Securities Commission of The Bahamas. Available to accredited "
@@ -432,6 +433,7 @@ FUND_DOCS = [
         "category": "lpa",
         "version": "Executed 15 January 2025",
         "file_name": "ZephyrCGF1_LPA_2025.pdf",
+        "nda_required": True,
         "regulatory_note": None,
     },
     {
@@ -474,6 +476,7 @@ FUND_DOCS = [
         "category": "subscription_agreement",
         "version": "Template v2.0",
         "file_name": "ZephyrCGF1_SubscriptionAgreement_v2.0.pdf",
+        "nda_required": True,
         "regulatory_note": None,
     },
 ]
@@ -547,6 +550,7 @@ async def main():
             "file_name": d["file_name"],
             "file_size": os.path.getsize(path),
             "version": d["version"],
+            "nda_required": d.get("nda_required", False),
             "uploaded_at": now,
         })
 
@@ -569,6 +573,7 @@ async def main():
                     "title": rec["title"],
                     "subtitle": rec["subtitle"],
                     "category": rec["category"],
+                    "nda_required": rec["nda_required"],
                 }},
             )
         else:

@@ -57,6 +57,10 @@ export default function PortalDocuments() {
   const [error, setError] = useState('');
   const [activeTab, setActiveTab] = useState('all');
   const [downloading, setDownloading] = useState('');
+  // NDA gate
+  const [ndaDoc, setNdaDoc] = useState(null);
+  const [ndaConfirmed, setNdaConfirmed] = useState(false);
+  const [ndaSubmitting, setNdaSubmitting] = useState(false);
 
   useEffect(() => {
     Promise.all([
@@ -70,7 +74,6 @@ export default function PortalDocuments() {
       }),
     ])
       .then(([investorDocs, fundDocs]) => {
-        // Mark fund docs so download routes to the right endpoint
         const taggedFund = fundDocs.map((d) => ({ ...d, _isFundDoc: true }));
         setDocs([...taggedFund, ...investorDocs]);
       })
@@ -78,7 +81,7 @@ export default function PortalDocuments() {
       .finally(() => setLoading(false));
   }, []);
 
-  const handleDownload = async (doc) => {
+  const performDownload = async (doc) => {
     setDownloading(doc.id);
     try {
       const endpoint = doc._isFundDoc
@@ -102,6 +105,39 @@ export default function PortalDocuments() {
       setError(e.message);
     } finally {
       setDownloading('');
+    }
+  };
+
+  const handleDownload = async (doc) => {
+    if (doc._isFundDoc && doc.nda_required) {
+      setNdaDoc(doc);
+      setNdaConfirmed(false);
+      setError('');
+      return;
+    }
+    await performDownload(doc);
+  };
+
+  const handleNdaConfirm = async () => {
+    if (!ndaDoc || !ndaConfirmed) return;
+    setNdaSubmitting(true);
+    try {
+      const res = await portalFetch(
+        `${API}/api/portal/fund-documents/${ndaDoc.id}/acknowledge-nda`,
+        { method: 'POST' },
+      );
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || 'Acknowledgement failed');
+      }
+      const doc = ndaDoc;
+      setNdaDoc(null);
+      setNdaConfirmed(false);
+      await performDownload(doc);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setNdaSubmitting(false);
     }
   };
 
@@ -191,7 +227,19 @@ export default function PortalDocuments() {
                         <div className="w-8 h-8 bg-[#F3F4F6] rounded-sm flex items-center justify-center flex-shrink-0">
                           <FileText size={15} color="#888880" />
                         </div>
-                        <p className="text-sm font-medium text-[#0F0F0E] truncate max-w-[200px]">{doc.file_name}</p>
+                        <div className="flex items-center gap-2 min-w-0">
+                          <p className="text-sm font-medium text-[#0F0F0E] truncate max-w-[200px]">{doc.file_name}</p>
+                          {doc.nda_required && (
+                            <span
+                              className="inline-flex items-center px-1.5 py-0.5 rounded-sm text-[10px] font-mono font-bold uppercase tracking-wider"
+                              style={{ color: '#B45309', backgroundColor: '#FEF3C7', border: '1px solid #FCD34D' }}
+                              title="NDA acknowledgement required"
+                              data-testid={`nda-badge-${doc.id}`}
+                            >
+                              NDA
+                            </span>
+                          )}
+                        </div>
                       </div>
                     </td>
                     <td className="px-5 py-3.5 hidden sm:table-cell">
@@ -224,6 +272,83 @@ export default function PortalDocuments() {
           </div>
         )}
       </div>
+
+      {/* ── NDA Acknowledgement Modal ──────────────────────────────────────── */}
+      {ndaDoc && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4"
+          data-testid="nda-modal"
+          onClick={(e) => {
+            if (e.target === e.currentTarget && !ndaSubmitting) setNdaDoc(null);
+          }}
+        >
+          <div className="bg-white rounded-sm shadow-xl max-w-lg w-full overflow-hidden">
+            <div className="px-6 py-4 border-b border-[#E8E6E0] bg-[#FAFAF8]">
+              <h2 className="text-base font-semibold text-[#0F0F0E]">
+                Professional Investor & Confidentiality Acknowledgement
+              </h2>
+              <p className="text-xs text-[#888880] mt-1">
+                Required before downloading <span className="font-mono">{ndaDoc.title}</span>
+              </p>
+            </div>
+            <div className="px-6 py-5 space-y-4">
+              <p className="text-sm text-[#374151] leading-relaxed">
+                The document you are about to download is a confidential
+                offering document of <strong>Zephyr Caribbean Growth Fund I</strong>,
+                a Bahamas-incorporated Professional Fund licensed by the
+                Securities Commission of The Bahamas (SCB-2024-PE-0042) under
+                the Investment Funds Act 2019.
+              </p>
+              <p className="text-sm text-[#374151] leading-relaxed">
+                By proceeding, you acknowledge and agree that:
+              </p>
+              <ul className="text-sm text-[#374151] space-y-1.5 list-disc pl-5">
+                <li>You qualify as a Professional or Accredited Investor under SCB regulations.</li>
+                <li>The document is provided in confidence and may not be copied, distributed or disclosed to any third party.</li>
+                <li>The contents do not constitute an offer to sell securities — only the executed Subscription Agreement creates a binding investment.</li>
+                <li>You will return or destroy the document on request by the Fund Manager.</li>
+              </ul>
+              <label className="flex items-start gap-2.5 mt-3 cursor-pointer" data-testid="nda-confirm-checkbox-label">
+                <input
+                  type="checkbox"
+                  checked={ndaConfirmed}
+                  onChange={(e) => setNdaConfirmed(e.target.checked)}
+                  className="mt-0.5 h-4 w-4 accent-[#00A8C6] cursor-pointer"
+                  data-testid="nda-confirm-checkbox"
+                />
+                <span className="text-sm text-[#0F0F0E] leading-snug">
+                  I confirm I am a Professional / Accredited Investor and accept the confidentiality terms above.
+                </span>
+              </label>
+            </div>
+            <div className="px-6 py-4 border-t border-[#E8E6E0] bg-[#FAFAF8] flex items-center justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setNdaDoc(null)}
+                disabled={ndaSubmitting}
+                data-testid="nda-cancel-btn"
+                className="px-4 py-2 text-sm font-semibold text-[#374151] border border-[#E8E6E0] rounded-sm hover:bg-white transition-colors disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleNdaConfirm}
+                disabled={!ndaConfirmed || ndaSubmitting}
+                data-testid="nda-accept-btn"
+                className="px-4 py-2 text-sm font-semibold text-white rounded-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                style={{ backgroundColor: '#00A8C6' }}
+              >
+                {ndaSubmitting ? (
+                  <><Loader2 size={13} className="animate-spin" /> Verifying…</>
+                ) : (
+                  'Accept & Download'
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

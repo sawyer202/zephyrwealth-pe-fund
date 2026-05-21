@@ -198,9 +198,10 @@ Building ZephyrWealth.ai — a professional back-office platform for a licensed 
 ### Phase 8 — Fund Documents + Auth on Custom Domain Fix (May 2026) ✅
 - **Fund Documents catalogue:** 9 Bahamian-regulator-aligned fund-level docs auto-generated as clean placeholder PDFs (Audited Financials, Factsheet, Q1 2026 Quarterly Report, Prospectus/PPM, LPA, SCB License Certificate, AML/CFT Policy, Risk Disclosure, Subscription Agreement). Numbers embedded match the live dashboard (committed/called/uncalled/call rate).
 - **Investor-specific Capital Call Report:** auto-generated PDF for `investor1@caymantech.com` summarising all capital calls + payment instructions.
-- New `generate_fund_docs.py` script — idempotent upserts in `documents` collection (`entity_type="fund"` for shared docs, `entity_type="investor"` for capital call report). Hooked into server startup (`seed_fund_documents`) and into `/api/admin/demo-reset`.
+- New `generate_fund_docs.py` script — idempotent upserts in `documents` collection (`entity_type="fund"` for shared docs, `entity_type="investor"` for capital call report). Hooked into server startup (`seed_fund_documents`) and into `/api/admin/demo-reset`. Fully agentic — no manual upload UI.
 - New endpoints: `GET /api/fund-documents`, `GET /api/fund-documents/{id}/download` (back-office) + `GET /api/portal/fund-documents`, `GET /api/portal/fund-documents/{id}/download` (portal).
 - Frontend: back-office Reports page gains "Fund Documents — Zephyr Caribbean Growth Fund I" section. Portal Documents page merges fund-level docs with the investor's own docs and adds a "Fund Documents" filter tab.
+- **NDA gate** for Fund Prospectus / LPA / Subscription Agreement on the investor portal: download returns 403 until investor POSTs `/api/portal/fund-documents/{id}/acknowledge-nda`. Acknowledgements stored in `nda_acknowledgements` collection (idempotent, audited). UI shows an "NDA" badge on protected rows and a Professional Investor + confidentiality acknowledgement modal that must be checked before "Accept & Download" enables.
 - **Custom-domain auth fix:** Back-office data was missing on `zephyrtrustai.com` because pages relied solely on the HttpOnly cookie (cross-origin blocked). Added a global `window.fetch` interceptor in `index.js` that automatically attaches the appropriate Bearer token (`zw_access_token` for back-office, `zw_investor_token` for portal). One small change replaces the need to refactor 43 fetch call sites.
 
 ## Backlog / Future Tasks
@@ -208,10 +209,10 @@ Building ZephyrWealth.ai — a professional back-office platform for a licensed 
 ### P1 — Upcoming
 - Preview Demo dry-run mode for Demo Reset (show how many records will be affected)
 - Fund Manager deal creation UX improvement
+- **Agentic reporting refresh:** auto-regenerate Q2 / Q3 / Q4 Quarterly Reports + Audited Financials each period (no manual upload). Reporting flow MUST remain fully automated — no back-office upload UI.
 
 ### P2 — Future
 - Trailer Fee Dashboard on Agents page
 - Cloud document storage (S3/GCS)
 - Multi-fund support
 - Two-factor authentication (TOTP)
-- Allow back-office to UPLOAD new fund documents from the UI (currently script-driven only)
