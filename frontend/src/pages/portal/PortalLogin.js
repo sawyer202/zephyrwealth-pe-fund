@@ -31,6 +31,26 @@ export default function PortalLogin() {
     }
   };
 
+  const handleDemoLogin = async (e) => {
+    e.preventDefault();
+    setError('');
+    setLoading(true);
+    try {
+      const demoEmail = 'investor1@caymantech.com';
+      const demoPassword = 'Invest1234!';
+      const data = await login(demoEmail, demoPassword);
+      if (data.first_login) {
+        navigate('/portal/change-password', { replace: true });
+      } else {
+        navigate('/portal/dashboard', { replace: true });
+      }
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <div className="min-h-screen flex flex-col md:flex-row" data-testid="portal-login-page">
       {/* ── Left panel ── */}
@@ -155,6 +175,20 @@ export default function PortalLogin() {
                 <><Loader2 size={15} className="animate-spin" /> Signing in...</>
               ) : (
                 'Sign In'
+              )}
+            </button>
+
+            <button
+              type="button"
+              onClick={handleDemoLogin}
+              disabled={loading}
+              data-testid="portal-demo-login-btn"
+              className="w-full py-2.5 text-sm font-semibold text-[#00A8C6] rounded-sm transition-all disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2 border border-[#00A8C6] bg-transparent hover:bg-[#00A8C6]/5"
+            >
+              {loading ? (
+                <><Loader2 size={15} className="animate-spin" /> Signing in...</>
+              ) : (
+                'Demo Login'
               )}
             </button>
           </form>
