@@ -10,19 +10,34 @@ const DOC_LABELS = {
   source_of_wealth_doc: 'Source of Wealth',
   corporate_documents: 'Corporate Documents',
   capital_call_notice: 'Capital Call Notice',
+  capital_call_report: 'Capital Call Report',
   distribution_notice: 'Distribution Notice',
   fund_report: 'Fund Report',
   im: 'Information Memorandum',
   financials: 'Financials',
   cap_table: 'Cap Table',
+  audited_financials: 'Audited Financials',
+  fund_factsheet: 'Fund Factsheet',
+  quarterly_report: 'Quarterly Report',
+  fund_prospectus: 'Fund Prospectus',
+  lpa: 'Limited Partnership Agreement',
+  scb_license: 'SCB License Certificate',
+  aml_policy: 'AML / CFT Policy',
+  risk_disclosure: 'Risk Disclosure',
+  subscription_agreement: 'Subscription Agreement',
 };
+
+const FUND_DOC_TYPES = [
+  'audited_financials', 'fund_factsheet', 'quarterly_report', 'fund_prospectus',
+  'lpa', 'scb_license', 'aml_policy', 'risk_disclosure', 'subscription_agreement',
+];
 
 const FILTER_TABS = [
   { key: 'all', label: 'All' },
+  { key: 'fund', label: 'Fund Documents', types: FUND_DOC_TYPES },
   { key: 'kyc', label: 'KYC Documents', types: ['passport', 'proof_of_address', 'source_of_wealth_doc', 'corporate_documents'] },
-  { key: 'capital_call_notice', label: 'Capital Call Notices', types: ['capital_call_notice'] },
-  { key: 'distribution_notice', label: 'Distribution Notices', types: ['distribution_notice'] },
-  { key: 'fund_report', label: 'Fund Reports', types: ['fund_report'] },
+  { key: 'capital_call', label: 'Capital Calls', types: ['capital_call_notice', 'capital_call_report'] },
+  { key: 'distribution_notice', label: 'Distributions', types: ['distribution_notice'] },
 ];
 
 function formatSize(b) {
@@ -44,12 +59,21 @@ export default function PortalDocuments() {
   const [downloading, setDownloading] = useState('');
 
   useEffect(() => {
-    portalFetch(`${API}/api/portal/documents`)
-      .then((r) => {
+    Promise.all([
+      portalFetch(`${API}/api/portal/documents`).then((r) => {
         if (!r.ok) throw new Error('Failed to load documents');
         return r.json();
+      }),
+      portalFetch(`${API}/api/portal/fund-documents`).then((r) => {
+        if (!r.ok) return [];
+        return r.json();
+      }),
+    ])
+      .then(([investorDocs, fundDocs]) => {
+        // Mark fund docs so download routes to the right endpoint
+        const taggedFund = fundDocs.map((d) => ({ ...d, _isFundDoc: true }));
+        setDocs([...taggedFund, ...investorDocs]);
       })
-      .then(setDocs)
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
   }, []);
@@ -57,7 +81,10 @@ export default function PortalDocuments() {
   const handleDownload = async (doc) => {
     setDownloading(doc.id);
     try {
-      const res = await portalFetch(`${API}/api/portal/documents/${doc.id}/download`);
+      const endpoint = doc._isFundDoc
+        ? `${API}/api/portal/fund-documents/${doc.id}/download`
+        : `${API}/api/portal/documents/${doc.id}/download`;
+      const res = await portalFetch(endpoint);
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
         throw new Error(err.detail || 'Download failed');

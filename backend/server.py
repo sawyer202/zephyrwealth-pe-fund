@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from database import db, DOCUMENTS_DIR
-from seed import seed_users, seed_demo_data, seed_demo_phase4, seed_demo_phase5, seed_portal_users
+from seed import seed_users, seed_demo_data, seed_demo_phase4, seed_demo_phase5, seed_portal_users, seed_fund_documents
 
 from routes.auth import router as auth_router
 from routes.dashboard import router as dashboard_router
@@ -21,6 +21,7 @@ from routes.admin import router as admin_router
 from routes.portal_auth import router as portal_auth_router
 from routes.portal import router as portal_router
 from routes.distributions import router as distributions_router
+from routes.fund_documents import router as fund_documents_router
 
 app = FastAPI(title="ZephyrWealth API", version="3.0.0")
 
@@ -74,6 +75,7 @@ app.include_router(admin_router)
 app.include_router(portal_auth_router)
 app.include_router(portal_router)
 app.include_router(distributions_router)
+app.include_router(fund_documents_router)
 
 
 @app.on_event("startup")
@@ -92,6 +94,7 @@ async def startup():
     await seed_portal_users()
     await db.investor_users.create_index("email", unique=True)
     await db.investor_users.create_index("investor_id")
+    await seed_fund_documents()
     print("ZephyrWealth API v6 ready — Investor Portal enabled")
 
 

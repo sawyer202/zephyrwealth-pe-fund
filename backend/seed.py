@@ -374,3 +374,15 @@ async def seed_demo_phase5():
             "created_by": "system", "created_at": dag(35),
         }
         await db.trailer_fee_invoices.insert_one(tf_doc)
+
+
+
+async def seed_fund_documents():
+    """Idempotent — generate fund-level PDFs + investor1 capital call report
+    on startup. Safe to re-run (script does upserts internally)."""
+    try:
+        from generate_fund_docs import main as gen_main
+        await gen_main()
+    except Exception as e:
+        # Non-fatal: log and continue. The dashboard still works without docs.
+        print(f"⚠ seed_fund_documents failed: {e}")

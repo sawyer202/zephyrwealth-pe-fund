@@ -195,6 +195,14 @@ Building ZephyrWealth.ai — a professional back-office platform for a licensed 
 - `GET /api/distributions`, `POST /api/distributions`, `PATCH /api/distributions/{id}/line-items/{investor_id}` added
 - Required env vars: `SENDGRID_API_KEY`, `FROM_EMAIL`, `SENDGRID_SANDBOX` (set `false` in production)
 
+### Phase 8 — Fund Documents + Auth on Custom Domain Fix (May 2026) ✅
+- **Fund Documents catalogue:** 9 Bahamian-regulator-aligned fund-level docs auto-generated as clean placeholder PDFs (Audited Financials, Factsheet, Q1 2026 Quarterly Report, Prospectus/PPM, LPA, SCB License Certificate, AML/CFT Policy, Risk Disclosure, Subscription Agreement). Numbers embedded match the live dashboard (committed/called/uncalled/call rate).
+- **Investor-specific Capital Call Report:** auto-generated PDF for `investor1@caymantech.com` summarising all capital calls + payment instructions.
+- New `generate_fund_docs.py` script — idempotent upserts in `documents` collection (`entity_type="fund"` for shared docs, `entity_type="investor"` for capital call report). Hooked into server startup (`seed_fund_documents`) and into `/api/admin/demo-reset`.
+- New endpoints: `GET /api/fund-documents`, `GET /api/fund-documents/{id}/download` (back-office) + `GET /api/portal/fund-documents`, `GET /api/portal/fund-documents/{id}/download` (portal).
+- Frontend: back-office Reports page gains "Fund Documents — Zephyr Caribbean Growth Fund I" section. Portal Documents page merges fund-level docs with the investor's own docs and adds a "Fund Documents" filter tab.
+- **Custom-domain auth fix:** Back-office data was missing on `zephyrtrustai.com` because pages relied solely on the HttpOnly cookie (cross-origin blocked). Added a global `window.fetch` interceptor in `index.js` that automatically attaches the appropriate Bearer token (`zw_access_token` for back-office, `zw_investor_token` for portal). One small change replaces the need to refactor 43 fetch call sites.
+
 ## Backlog / Future Tasks
 
 ### P1 — Upcoming
@@ -203,7 +211,7 @@ Building ZephyrWealth.ai — a professional back-office platform for a licensed 
 
 ### P2 — Future
 - Trailer Fee Dashboard on Agents page
-- Email notifications (SendGrid) — capital call notices, document uploads
 - Cloud document storage (S3/GCS)
 - Multi-fund support
 - Two-factor authentication (TOTP)
+- Allow back-office to UPLOAD new fund documents from the UI (currently script-driven only)

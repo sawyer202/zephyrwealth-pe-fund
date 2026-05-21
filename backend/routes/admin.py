@@ -95,13 +95,17 @@ async def demo_reset(current_user: dict = Depends(get_current_user)):
     cleaned["trailer_fee_invoices_cleared"] = r5c.deleted_count
     cleaned["investor_users_cleared"] = r5d.deleted_count
 
-    # 8. Re-seed Phase 4 & 5 pristine data + portal accounts
+    # 8. Re-seed Phase 4 & 5 pristine data + portal accounts + fund docs
     await seed_demo_phase4()
     await seed_demo_phase5()
-    from seed import seed_portal_users
+    from seed import seed_portal_users, seed_fund_documents
     await seed_portal_users()
+    # Wipe + regenerate fund-level docs (idempotent via upsert in script)
+    await db.documents.delete_many({"entity_type": "fund"})
+    await seed_fund_documents()
     cleaned["seed_restored"] = True
     cleaned["portal_users_reseeded"] = True
+    cleaned["fund_documents_regenerated"] = True
 
     # 9. Log the reset (in the freshly seeded audit log)
     await db.audit_logs.insert_one({

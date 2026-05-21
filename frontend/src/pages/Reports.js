@@ -128,6 +128,41 @@ export default function Reports() {
   const [showReset, setShowReset] = useState(false);
   const [resetting, setResetting] = useState(false);
 
+  // Fund Documents
+  const [fundDocs, setFundDocs] = useState([]);
+  const [downloadingDoc, setDownloadingDoc] = useState('');
+
+  useEffect(() => {
+    fetch(`${API}/api/fund-documents`, { credentials: 'include' })
+      .then((r) => (r.ok ? r.json() : []))
+      .then((data) => setFundDocs(Array.isArray(data) ? data : []))
+      .catch(() => setFundDocs([]));
+  }, []);
+
+  const downloadFundDoc = async (doc) => {
+    setDownloadingDoc(doc.id);
+    try {
+      const res = await fetch(
+        `${API}/api/fund-documents/${doc.id}/download`,
+        { credentials: 'include' },
+      );
+      if (!res.ok) throw new Error('Download failed');
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = doc.file_name;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      toast.error(e.message || 'Download failed');
+    } finally {
+      setDownloadingDoc('');
+    }
+  };
+
   const fetchLogs = useCallback(async () => {
     setLoading(true);
     setError('');
@@ -330,6 +365,64 @@ export default function Reports() {
               </button>
             </div>
           </div>
+        </div>
+      </div>
+
+      {/* ── Fund Documents (Caribbean Growth Fund I) ──────────────────────── */}
+      <div className="mb-6" data-testid="fund-documents-section">
+        <p className="text-xs font-semibold text-[#6B7280] uppercase tracking-wider mb-3">
+          Fund Documents — Zephyr Caribbean Growth Fund I
+        </p>
+        <div className="bg-white border border-[#E5E7EB] rounded-sm shadow-sm">
+          {fundDocs.length === 0 ? (
+            <div className="px-5 py-6 text-center">
+              <p className="text-sm text-[#6B7280]">No fund documents available.</p>
+            </div>
+          ) : (
+            <div className="divide-y divide-[#F3F4F6]">
+              {fundDocs.map((doc) => (
+                <div
+                  key={doc.id}
+                  className="flex items-center justify-between px-5 py-3.5 hover:bg-[#FAFAF8] transition-colors"
+                  data-testid={`fund-doc-row-${doc.id}`}
+                >
+                  <div className="flex items-center gap-3 min-w-0 flex-1">
+                    <div className="w-9 h-9 bg-[#00A8C6]/10 rounded-sm flex items-center justify-center flex-shrink-0">
+                      <FileText size={16} color="#00A8C6" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-[#1F2937] truncate">
+                        {doc.title || doc.file_name}
+                      </p>
+                      <p className="text-xs text-[#6B7280] mt-0.5 truncate">
+                        {doc.subtitle ? `${doc.subtitle} · ` : ''}
+                        {doc.version || '—'}
+                        {doc.uploaded_at ? ` · Updated ${formatTs(doc.uploaded_at).split(',')[0]}` : ''}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3 flex-shrink-0">
+                    <span className="px-2 py-0.5 text-xs font-mono font-medium rounded-sm bg-[#1B3A6B]/10 text-[#1B3A6B] border border-[#1B3A6B]/20 hidden sm:inline-flex">
+                      Fund-level
+                    </span>
+                    <button
+                      onClick={() => downloadFundDoc(doc)}
+                      disabled={downloadingDoc === doc.id}
+                      data-testid={`fund-doc-download-${doc.id}`}
+                      className="flex items-center gap-1.5 text-xs font-semibold text-[#1B3A6B] border border-[#1B3A6B]/20 px-3 py-1.5 rounded-sm hover:bg-[#1B3A6B]/5 transition-colors disabled:opacity-50"
+                    >
+                      {downloadingDoc === doc.id ? (
+                        <Loader2 size={13} className="animate-spin" />
+                      ) : (
+                        <Download size={13} />
+                      )}
+                      Download PDF
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
