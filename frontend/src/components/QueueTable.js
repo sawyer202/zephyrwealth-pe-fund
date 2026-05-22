@@ -36,7 +36,7 @@ function formatCurrency(amount) {
   return `$${amount}`;
 }
 
-export default function QueueTable({ data, type, loading }) {
+export default function QueueTable({ data, type, loading, onReview }) {
   const isInvestor = type === 'investor';
 
   if (loading) {
@@ -106,6 +106,7 @@ export default function QueueTable({ data, type, loading }) {
                 </td>
                 <td className="px-4 py-3">
                   <button
+                    onClick={() => onReview && onReview(item.id, type)}
                     disabled={!scorecardDone}
                     data-testid={`${type}-action-${item.id}`}
                     title={

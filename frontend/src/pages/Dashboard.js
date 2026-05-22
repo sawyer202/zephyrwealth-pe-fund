@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Users, Clock, TrendingUp, AlertTriangle, RefreshCw,
   Landmark, DollarSign, ArrowDownToLine, Percent,
@@ -28,6 +29,7 @@ function getGreeting() {
 }
 
 export default function Dashboard() {
+  const navigate = useNavigate();
   const [stats, setStats] = useState(null);
   const [investors, setInvestors] = useState([]);
   const [deals, setDeals] = useState([]);
@@ -68,6 +70,14 @@ export default function Dashboard() {
   useEffect(() => {
     fetchData();
   }, []);
+
+  const handleReview = (id, type) => {
+    if (type === 'investor') {
+      navigate(`/investors/${id}`);
+    } else if (type === 'deal') {
+      navigate(`/deals/${id}`);
+    }
+  };
 
   const today = new Date().toLocaleDateString('en-US', {
     weekday: 'long',
@@ -260,9 +270,9 @@ export default function Dashboard() {
 
         {/* Table Content */}
         {activeTab === 'investors' ? (
-          <QueueTable data={investors} type="investor" loading={loading} />
+          <QueueTable data={investors} type="investor" loading={loading} onReview={handleReview} />
         ) : (
-          <QueueTable data={deals} type="deal" loading={loading} />
+          <QueueTable data={deals} type="deal" loading={loading} onReview={handleReview} />
         )}
       </div>
     </div>
